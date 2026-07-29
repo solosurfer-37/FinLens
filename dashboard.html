@@ -6,7 +6,7 @@
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
   <meta http-equiv="X-Frame-Options" content="DENY" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
-  <title>FinLens— Dashboard</title>
+  <title>FinLens — Dashboard</title>
 
   <link
     rel="stylesheet"
@@ -21,10 +21,8 @@
   />
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-
 <link rel="apple-touch-icon" sizes="192x192" href="favicon-192x192.png">
 </head>
 <body>
@@ -33,24 +31,32 @@
   <nav class="fcis-navbar">
     <a href="index.html" class="fcis-brand">
       <div class="fcis-brand-icon">
-        <!-- Magnifying glass -->
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/>
           <line x1="16.5" y1="16.5" x2="22" y2="22"/>
         </svg>
       </div>
       <span class="fcis-brand-name">FinLens</span>
-      
     </a>
 
-    <div class="fcis-nav-links">
-      <a href="index.html"         class="fcis-nav-link">Upload</a>
-      <a href="dashboard.html"     class="fcis-nav-link active">Dashboard</a>
-      <a href="investigation.html" class="fcis-nav-link">Investigation</a>
+    <div class="fcis-nav-links" id="fcis-nav-links">
+      <a href="index.html" class="fcis-nav-link">Upload</a>
+      <a href="dashboard.html" class="fcis-nav-link active" data-requires-upload>Dashboard</a>
+      <a href="investigation.html" class="fcis-nav-link" data-requires-upload>Investigation</a>
     </div>
 
-    <span class="status-dot">SYSTEM ONLINE</span>
+    <div class="fcis-navbar-right">
+      <span class="status-dot"><span class="status-text">SYSTEM ONLINE</span></span>
+      <button class="fcis-menu-toggle" id="nav-menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="fcis-nav-links">
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+      </button>
+    </div>
   </nav>
+  <div class="nav-menu-backdrop" id="nav-menu-backdrop"></div>
+
+  <div id="nav-toast" class="nav-toast" role="status" aria-live="polite"></div>
 
   <!-- ===================== ERROR BANNER ===================== -->
   <div id="error-banner" class="error-banner mx-4 mt-4" role="alert" aria-live="assertive">
@@ -58,8 +64,29 @@
     <span class="error-msg"></span>
   </div>
 
+  <!-- ===================== EMPTY STATE (no upload yet) ===================== -->
+  <div id="dashboard-empty-state" class="page-empty-state" style="display:none;">
+    <div class="empty-illustration" aria-hidden="true">
+      <i class="bi bi-bar-chart-line"></i>
+    </div>
+
+    <h2>No investigation loaded.</h2>
+    <p class="empty-lede">Upload a transaction file to begin analysis.</p>
+
+    <a href="index.html" class="btn-fcis-primary">
+      <i class="bi bi-upload" aria-hidden="true"></i>
+      Upload Transaction File
+    </a>
+
+    <ul class="empty-guidance">
+      <li><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV files up to 50&nbsp;MB</li>
+      <li><i class="bi bi-shield-check" aria-hidden="true"></i> Risk scores and suspicious accounts generate automatically</li>
+      <li><i class="bi bi-diagram-3" aria-hidden="true"></i> A money-trail graph is built for every upload</li>
+    </ul>
+  </div>
+
   <!-- ===================== MAIN CONTENT ===================== -->
-  <main class="dashboard-layout">
+  <main class="dashboard-layout" id="dashboard-main">
 
     <div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-3">
       <div>
@@ -77,6 +104,24 @@
         </a>
       </div>
     </div>
+
+    <!-- ===================== CASE SUMMARY STRIP ===================== -->
+    <section class="case-strip" aria-label="Case summary" id="case-strip">
+      <div class="case-strip-item">
+        <span class="case-strip-label">Source file</span>
+        <span class="case-strip-value" id="case-filename">—</span>
+      </div>
+      <div class="case-strip-divider"></div>
+      <div class="case-strip-item">
+        <span class="case-strip-label">Analysed</span>
+        <span class="case-strip-value" id="case-uploaded-at">—</span>
+      </div>
+      <div class="case-strip-divider"></div>
+      <div class="case-strip-item">
+        <span class="case-strip-label">Status</span>
+        <span class="fcis-badge badge-low" id="case-status">Complete</span>
+      </div>
+    </section>
 
     <!-- ===================== STATS GRID ===================== -->
     <section aria-label="Summary statistics">
@@ -112,14 +157,34 @@
           <div class="stat-label">Suspicious Accounts</div>
         </article>
 
-        <article class="stat-card stat-danger threat-pulse" aria-label="Highest Risk Score">
-          <div class="stat-icon icon-danger" aria-hidden="true">
-            <i class="bi bi-shield-exclamation"></i>
+        <article id="risk-gauge-card" class="stat-card risk-gauge-card" aria-label="Highest Risk Score">
+          <div class="risk-gauge-wrap">
+            <svg class="risk-gauge-svg" viewBox="0 0 140 140" aria-hidden="true">
+              <circle class="risk-gauge-track" cx="70" cy="70" r="58"></circle>
+              <circle class="risk-gauge-fill" id="risk-gauge-fill" cx="70" cy="70" r="58"></circle>
+            </svg>
+            <div class="risk-gauge-center">
+              <span class="risk-gauge-percent" id="risk-gauge-percent" aria-live="polite">
+                <span class="skeleton" style="width:44px;height:26px;display:inline-block;border-radius:4px;"></span>
+              </span>
+              <span class="risk-gauge-level" id="risk-gauge-level"></span>
+            </div>
           </div>
-          <div class="stat-value" id="stat-highest-risk" style="color:var(--critical)" aria-live="polite">
-            <span class="skeleton" style="width:60px;height:32px;display:inline-block;border-radius:4px;"></span>
+
+          <div class="risk-gauge-meta">
+            <div class="stat-label">Highest Risk Score</div>
+            <ul class="risk-gauge-legend">
+              <li><span class="risk-gauge-dot" style="background:var(--low)"></span>Safe</li>
+              <li><span class="risk-gauge-dot" style="background:var(--medium)"></span>Warning</li>
+              <li><span class="risk-gauge-dot" style="background:var(--high)"></span>Elevated</li>
+              <li><span class="risk-gauge-dot" style="background:var(--critical)"></span>Critical</li>
+            </ul>
           </div>
-          <div class="stat-label">Highest Risk Score</div>
+
+          <!-- Legacy target: the original (unchanged) stat-population line
+               still writes the raw number here. It's kept off-screen —
+               the gauge above is now the real display. -->
+          <span id="stat-highest-risk" style="display:none" aria-hidden="true"></span>
         </article>
 
       </div>
@@ -157,7 +222,7 @@
 
       <div class="fcis-card" style="padding:0; overflow:hidden;">
         <div class="fcis-table-wrapper">
-          <table class="fcis-table" role="table" aria-label="Account risk scores">
+          <table class="fcis-table risk-table" role="table" aria-label="Account risk scores">
             <thead>
               <tr>
                 <th scope="col" style="width:48px;">#</th>
@@ -169,10 +234,8 @@
           </table>
         </div>
 
-        <!-- Empty state -->
         <div id="table-empty" class="empty-state" style="display:none;" aria-live="polite">
           <div class="empty-state-icon" aria-hidden="true">
-            <!-- No results / search icon -->
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7"/>
               <line x1="16.5" y1="16.5" x2="22" y2="22"/>
@@ -191,9 +254,7 @@
   <!-- ===================== FOOTER ===================== -->
   <footer class="fcis-footer">
     <span class="fcis-footer-text">FCIS &copy; 2026 &mdash; FinLens</span>
-    <span class="fcis-footer-text">
-      <span class="fcis-footer-text">Team : Patiala Pegs</span>
-    </span>
+    <span class="fcis-footer-text">Team : Patiala Pegs</span>
   </footer>
 
   <!-- Loading overlay -->
@@ -201,7 +262,7 @@
     <div class="loading-card">
       <div class="loading-spinner-lg" aria-hidden="true"></div>
       <p class="loading-label">Fetching analysis results…</p>
-      <p class="loading-sub">GET /api/dashboard &amp; /api/risk-scores</p>
+      <p class="loading-sub">Reading stored case data</p>
     </div>
   </div>
 

@@ -1,29 +1,31 @@
-
-
 'use strict';
 
 /* ============================================================
-   CONSTANTS
+   CONFIG
+   Centralised so endpoints/keys are changed in exactly one place.
    ============================================================ */
-const API_BASE        = '';          // Same-origin; replace with full URL in production
-const FETCH_TIMEOUT_MS = 10_000;
-const ALLOWED_CSV_MIME = ['text/csv', 'application/vnd.ms-excel', 'text/plain'];
-const MAX_FILE_BYTES   = 50 * 1024 * 1024; // 50 MB
+const CONFIG = {
+  UPLOAD_ENDPOINT:   'https://finlens-back.onrender.com/upload',
+  REPORT_ENDPOINT:   'https://finlens-back.onrender.com/report',
+  STORAGE_KEY:       'analysisData',
+  STORAGE_META_KEY:  'analysisMeta',
+  MAX_FILE_BYTES:    50 * 1024 * 1024, // 50 MB
+  FETCH_TIMEOUT_MS:  10_000,
+};
 
 /* ============================================================
-   DUMMY DATA (for demo / hackathon testing)
-   Mirrors the expected API response shapes exactly.
-   Remove / replace once a real backend is connected.
+   DEMO DATASET
+   Lets a visitor see the product without a real ledger.
+   Shape matches exactly what the backend returns after /upload.
    ============================================================ */
-const DUMMY = {
-  dashboard: {
-    totalTransactions:  12_480,
-    totalAccounts:        847,
-    suspiciousAccounts:    43,
-    highestRiskScore:      97,
+const DEMO_ANALYSIS = {
+  summary: {
+    totalTransactions: 12_480,
+    totalAccounts: 847,
+    suspiciousAccounts: 43,
+    highestRiskScore: 97,
   },
-
-  riskScores: [
+  riskData: [
     { account: 'ACC-0047', risk: 97 },
     { account: 'ACC-0193', risk: 92 },
     { account: 'ACC-0312', risk: 88 },
@@ -38,9 +40,8 @@ const DUMMY = {
     { account: 'ACC-0889', risk: 33 },
     { account: 'ACC-0275', risk: 22 },
     { account: 'ACC-0364', risk: 14 },
-    { account: 'ACC-0711', risk:  8 },
+    { account: 'ACC-0711', risk: 8 },
   ],
-
   graph: {
     nodes: [
       { id: 'ACC-0047', label: 'ACC-0047', risk: 97 },
@@ -58,82 +59,30 @@ const DUMMY = {
     ],
     edges: [
       { from: 'ACC-0047', to: 'ACC-0193', amount: 142_000 },
-      { from: 'ACC-0193', to: 'ACC-0312', amount:  87_500 },
+      { from: 'ACC-0193', to: 'ACC-0312', amount: 87_500 },
       { from: 'ACC-0312', to: 'ACC-0047', amount: 135_000 },
-      { from: 'ACC-0081', to: 'ACC-0047', amount:  63_200 },
-      { from: 'ACC-0556', to: 'ACC-0193', amount:  29_800 },
-      { from: 'ACC-0204', to: 'ACC-0312', amount:  91_000 },
-      { from: 'ACC-0731', to: 'ACC-0081', amount:  17_400 },
-      { from: 'ACC-0418', to: 'ACC-0556', amount:  44_600 },
-      { from: 'ACC-0097', to: 'ACC-0731', amount:  12_300 },
-      { from: 'ACC-0623', to: 'ACC-0418', amount:  38_900 },
-      { from: 'ACC-0142', to: 'ACC-0623', amount:   9_750 },
-      { from: 'ACC-0889', to: 'ACC-0142', amount:  22_100 },
-      { from: 'ACC-0047', to: 'ACC-0081', amount:  55_000 },
-      { from: 'ACC-0193', to: 'ACC-0556', amount:  71_200 },
+      { from: 'ACC-0081', to: 'ACC-0047', amount: 63_200 },
+      { from: 'ACC-0556', to: 'ACC-0193', amount: 29_800 },
+      { from: 'ACC-0204', to: 'ACC-0312', amount: 91_000 },
+      { from: 'ACC-0731', to: 'ACC-0081', amount: 17_400 },
+      { from: 'ACC-0418', to: 'ACC-0556', amount: 44_600 },
+      { from: 'ACC-0097', to: 'ACC-0731', amount: 12_300 },
+      { from: 'ACC-0623', to: 'ACC-0418', amount: 38_900 },
+      { from: 'ACC-0142', to: 'ACC-0623', amount: 9_750 },
+      { from: 'ACC-0889', to: 'ACC-0142', amount: 22_100 },
+      { from: 'ACC-0047', to: 'ACC-0081', amount: 55_000 },
+      { from: 'ACC-0193', to: 'ACC-0556', amount: 71_200 },
     ],
   },
-
-  investigations: {
-    'ACC-0047': {
-      account:          'ACC-0047',
-      risk:              97,
-      registeredName:   'Shell Dynamics Ltd.',
-      flaggedSince:     '2024-03-12',
-      totalVolume:      '$4,820,000',
-      txCount:           312,
-      jurisdiction:     'Cayman Islands',
-      report: `This account exhibits a high-confidence circular transaction pattern across three primary
-counterparties (ACC-0193, ACC-0312, ACC-0081), consistent with layering activity in
-money laundering typologies. Transaction velocity spiked 340% in the 72 hours preceding
-flag detection.
-
-Round-dollar amounts ($142,000 and $135,000) transacted in rapid succession suggest
-structuring behaviour designed to avoid automated reporting thresholds. The account's
-registered jurisdiction (Cayman Islands) combined with the absence of any verifiable
-commercial invoices raises significant concern.
-
-Recommend: immediate SAR filing, account freeze pending judicial review, and cross-reference
-with FATF grey-list entities. Confidence score: 97/100.`,
-    },
-    'ACC-0193': {
-      account:          'ACC-0193',
-      risk:              92,
-      registeredName:   'Vertex Capital LLP',
-      flaggedSince:     '2024-04-01',
-      totalVolume:      '$2,340,000',
-      txCount:           204,
-      jurisdiction:     'British Virgin Islands',
-      report: `Account ACC-0193 acts as a central relay node in the detected transaction graph, receiving
-funds from ACC-0047 and redistributing to ACC-0312 and ACC-0556. This hub-and-spoke
-topology is a well-documented obfuscation method.
-
-Three dormant periods of exactly 72 hours were observed between transfer bursts — a
-timing pattern consistent with manual oversight of automated layering scripts. Entity
-is registered in BVI with a single director sharing registration addresses with two
-known shell companies.`,
-    },
-    'DEFAULT': {
-      account:          '—',
-      risk:              null,
-      registeredName:   '—',
-      flaggedSince:     '—',
-      totalVolume:      '—',
-      txCount:           0,
-      jurisdiction:     '—',
-      report: null,
-    },
-  },
-
   transactions: [
     { id: 'TXN-001', from: 'ACC-0047', to: 'ACC-0193', amount: 142_000, date: '2024-06-01 09:14', status: 'Flagged' },
-    { id: 'TXN-002', from: 'ACC-0193', to: 'ACC-0312', amount:  87_500, date: '2024-06-01 11:32', status: 'Flagged' },
+    { id: 'TXN-002', from: 'ACC-0193', to: 'ACC-0312', amount: 87_500,  date: '2024-06-01 11:32', status: 'Flagged' },
     { id: 'TXN-003', from: 'ACC-0312', to: 'ACC-0047', amount: 135_000, date: '2024-06-01 14:55', status: 'Flagged' },
-    { id: 'TXN-004', from: 'ACC-0081', to: 'ACC-0047', amount:  63_200, date: '2024-06-02 08:03', status: 'Suspicious' },
-    { id: 'TXN-005', from: 'ACC-0556', to: 'ACC-0193', amount:  29_800, date: '2024-06-02 10:47', status: 'Suspicious' },
-    { id: 'TXN-006', from: 'ACC-0204', to: 'ACC-0312', amount:  91_000, date: '2024-06-03 13:22', status: 'Flagged' },
-    { id: 'TXN-007', from: 'ACC-0731', to: 'ACC-0081', amount:  17_400, date: '2024-06-03 15:09', status: 'Clear' },
-    { id: 'TXN-008', from: 'ACC-0418', to: 'ACC-0556', amount:  44_600, date: '2024-06-04 09:55', status: 'Suspicious' },
+    { id: 'TXN-004', from: 'ACC-0081', to: 'ACC-0047', amount: 63_200,  date: '2024-06-02 08:03', status: 'Suspicious' },
+    { id: 'TXN-005', from: 'ACC-0556', to: 'ACC-0193', amount: 29_800,  date: '2024-06-02 10:47', status: 'Suspicious' },
+    { id: 'TXN-006', from: 'ACC-0204', to: 'ACC-0312', amount: 91_000,  date: '2024-06-03 13:22', status: 'Flagged' },
+    { id: 'TXN-007', from: 'ACC-0731', to: 'ACC-0081', amount: 17_400,  date: '2024-06-03 15:09', status: 'Clear' },
+    { id: 'TXN-008', from: 'ACC-0418', to: 'ACC-0556', amount: 44_600,  date: '2024-06-04 09:55', status: 'Suspicious' },
   ],
 };
 
@@ -141,52 +90,11 @@ known shell companies.`,
    UTILITIES
    ============================================================ */
 
-/**
- * Safe text setter — never touches innerHTML with external data.
- * @param {Element} el
- * @param {string|number} text
- */
 function safeText(el, text) {
   if (!el) return;
   el.textContent = String(text ?? '—');
 }
 
-/**
- * Fetch wrapper with timeout and structured error.
- * @param {string} url
- * @param {RequestInit} [options]
- * @returns {Promise<any>}
- */
-async function apiFetch(url, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Error('Server returned non-JSON response.');
-    }
-
-    return await response.json();
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.name === 'AbortError') throw new Error('Request timed out. Check server connectivity.');
-    throw err;
-  }
-}
-
-/**
- * Return risk tier label from a numeric score.
- * @param {number} score  0–100
- * @returns {'critical'|'high'|'medium'|'low'}
- */
 function riskTier(score) {
   if (score >= 80) return 'critical';
   if (score >= 60) return 'high';
@@ -194,26 +102,14 @@ function riskTier(score) {
   return 'low';
 }
 
-/**
- * Return a human-readable risk tier label.
- * @param {number} score
- * @returns {string}
- */
 function riskLabel(score) {
   const t = riskTier(score);
   return { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }[t];
 }
 
-/**
- * Format a number as currency string (USD).
- * @param {number} n
- * @returns {string}
- */
 function formatCurrency(n) {
   const num = Number(n);
-
   if (Number.isNaN(num)) return '—';
-
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -221,35 +117,16 @@ function formatCurrency(n) {
   }).format(num);
 }
 
-/**
- * Format large numbers with locale commas.
- * @param {number} n
- * @returns {string}
- */
 function formatNumber(n) {
   if (typeof n !== 'number' || Number.isNaN(n)) return '—';
   return new Intl.NumberFormat('en-US').format(n);
 }
 
-/**
- * Show/hide a DOM element by toggling a CSS class.
- * @param {Element} el
- * @param {boolean} visible
- * @param {string} [cls]
- */
 function toggleVisible(el, visible, cls = 'visible') {
   if (!el) return;
   el.classList.toggle(cls, visible);
 }
 
-/**
- * Create a DOM element with optional text content.
- * NEVER use innerHTML. Build DOM nodes programmatically.
- * @param {string} tag
- * @param {string} [className]
- * @param {string|number} [text]
- * @returns {HTMLElement}
- */
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -257,11 +134,6 @@ function el(tag, className, text) {
   return node;
 }
 
-/**
- * Show an error banner with a message.
- * @param {Element} bannerEl
- * @param {string} message
- */
 function showError(bannerEl, message) {
   if (!bannerEl) return;
   const span = bannerEl.querySelector('.error-msg');
@@ -269,49 +141,115 @@ function showError(bannerEl, message) {
   toggleVisible(bannerEl, true);
 }
 
-/**
- * Hide an error banner.
- * @param {Element} bannerEl
- */
 function hideError(bannerEl) {
   toggleVisible(bannerEl, false);
 }
 
 /* ============================================================
-   SIMULATED API (wraps DUMMY data with realistic delay)
-   In production: swap each function body to a real apiFetch call.
+   PERSISTED ANALYSIS STATE
+   Single source of truth read/written across all three pages.
    ============================================================ */
-const SimAPI = {
-  async getDashboard() {
-    await _delay(480);
-    return structuredClone(DUMMY.dashboard);
-  },
 
-  async getRiskScores() {
-    await _delay(620);
-    return structuredClone(DUMMY.riskScores);
-  },
+function getStoredAnalysis() {
+  try {
+    const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
-  async getGraph() {
-    await _delay(700);
-    return structuredClone(DUMMY.graph);
-  },
+function getStoredMeta() {
+  try {
+    const raw = localStorage.getItem(CONFIG.STORAGE_META_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
-  async getInvestigation(accountId) {
-    await _delay(550);
-    const data = DUMMY.investigations[accountId] ?? DUMMY.investigations['DEFAULT'];
-    return structuredClone(data);
-  },
+function saveAnalysis(analysis, meta) {
+  localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(analysis));
+  localStorage.setItem(CONFIG.STORAGE_META_KEY, JSON.stringify(meta));
+}
 
-  async uploadCSV(file) {
-    await _delay(1800);
-    // In production: POST multipart/form-data to /api/upload
-    return { success: true, jobId: 'JOB-' + Math.random().toString(36).slice(2, 9).toUpperCase() };
-  },
-};
+function hasAnalysisData() {
+  return !!getStoredAnalysis();
+}
 
-function _delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+/* ============================================================
+   NAV GUARD
+   Runs on every page. Locks Dashboard/Investigation until an
+   analysis exists, and keeps header state consistent afterward.
+   ============================================================ */
+
+let navToastTimer = null;
+
+function showNavToast(message) {
+  const toast = document.getElementById('nav-toast');
+  if (!toast) return;
+  safeText(toast, message);
+  toast.classList.add('visible');
+  clearTimeout(navToastTimer);
+  navToastTimer = setTimeout(() => toast.classList.remove('visible'), 2600);
+}
+
+function navGuardClickHandler(e) {
+  e.preventDefault();
+  showNavToast('Upload a ledger first to unlock this page.');
+}
+
+function initNavGuard() {
+  const unlocked = hasAnalysisData();
+  document.querySelectorAll('[data-requires-upload]').forEach(link => {
+    link.removeEventListener('click', navGuardClickHandler);
+    if (unlocked) {
+      link.classList.remove('nav-locked');
+      link.removeAttribute('aria-disabled');
+    } else {
+      link.classList.add('nav-locked');
+      link.setAttribute('aria-disabled', 'true');
+      link.addEventListener('click', navGuardClickHandler);
+    }
+  });
+}
+
+/* ============================================================
+   MOBILE NAVBAR MENU
+   Hamburger toggle for the nav-links dropdown. Runs on every page.
+   ============================================================ */
+function initMobileNav() {
+  const toggle   = document.getElementById('nav-menu-toggle');
+  const links    = document.getElementById('fcis-nav-links');
+  const backdrop = document.getElementById('nav-menu-backdrop');
+
+  if (!toggle || !links) return;
+
+  function closeMenu() {
+    links.classList.remove('mobile-open');
+    backdrop?.classList.remove('visible');
+    toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  function openMenu() {
+    links.classList.add('mobile-open');
+    backdrop?.classList.add('visible');
+    toggle.setAttribute('aria-expanded', 'true');
+  }
+
+  toggle.addEventListener('click', () => {
+    const isOpen = links.classList.contains('mobile-open');
+    isOpen ? closeMenu() : openMenu();
+  });
+
+  backdrop?.addEventListener('click', closeMenu);
+  links.querySelectorAll('a').forEach(a => a.addEventListener('click', closeMenu));
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) closeMenu();
+  });
 }
 
 /* ============================================================
@@ -329,17 +267,17 @@ function initUploadPage() {
   const fileNameEl   = document.getElementById('file-name');
   const fileSizeEl   = document.getElementById('file-size');
   const spinnerEl    = document.getElementById('upload-spinner');
+  const demoBtn      = document.getElementById('demo-data-btn');
 
   if (!dropZone || !fileInput || !uploadBtn) return;
 
   let selectedFile = null;
 
-  /** Validate file: must be .csv and within size limit. */
   function validateFile(file) {
     if (!file) return 'No file provided.';
     const ext = file.name.split('.').pop().toLowerCase();
     if (ext !== 'csv') return `Invalid file type ".${ext}". Only .csv files are accepted.`;
-    if (file.size > MAX_FILE_BYTES) return `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB.`;
+    if (file.size > CONFIG.MAX_FILE_BYTES) return `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB.`;
     return null;
   }
 
@@ -421,83 +359,72 @@ function initUploadPage() {
 
   /* --- Upload --- */
   uploadBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
+    if (!selectedFile) return;
 
-  const err = validateFile(selectedFile);
-  if (err) {
-    showStatus('error', '⚠', err);
-    return;
-  }
+    const err = validateFile(selectedFile);
+    if (err) {
+      showStatus('error', '⚠', err);
+      return;
+    }
 
-  uploadBtn.disabled = true;
-  toggleVisible(spinnerEl, true, 'd-flex');
+    uploadBtn.disabled = true;
+    toggleVisible(spinnerEl, true, 'd-flex');
+    showStatus('loading', '', 'Parsing ledger and scoring risk — please wait.');
+    statusIcon.className = 'spinner';
+    statusIcon.textContent = '';
 
-  showStatus(
-    'loading',
-    '',
-    'Parsing ledger and scoring risk — please wait.'
-  );
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
 
-  statusIcon.className = 'spinner';
-  statusIcon.textContent = '';
+      const response = await fetch(CONFIG.UPLOAD_ENDPOINT, {
+        method: 'POST',
+        body: formData,
+      });
 
-  try {
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-
-    const response = await fetch(
-      "https://finlens-back.onrender.com/upload",
-      {
-        method: "POST",
-        body: formData
+      if (!response.ok) {
+        throw new Error(`Upload failed (HTTP ${response.status}).`);
       }
-    );
 
-    const result = await response.json();
+      const result = await response.json();
 
-    localStorage.setItem(
-      "analysisData",
-      JSON.stringify(result)
-    );
+      if (!result || result.success === false) {
+        throw new Error(result?.error || 'Upload failed.');
+      }
 
-    if (result.success) {
+      saveAnalysis(result, {
+        filename: selectedFile.name,
+        uploadedAt: new Date().toISOString(),
+      });
+
       statusIcon.className = '';
-
-      showStatus(
-        'success',
-        '✓',
-        'Risk analysis complete — Redirecting to dashboard.'
-      );
+      showStatus('success', '✓', 'Risk analysis complete — redirecting to dashboard.');
 
       setTimeout(() => {
         window.location.href = 'dashboard.html';
-      }, 1500);
+      }, 1200);
 
-    } else {
-      throw new Error(result.error || 'Upload failed');
+    } catch (err) {
+      statusIcon.className = '';
+      showStatus('error', '⚠', err.message || 'Upload failed. Please try again.');
+      uploadBtn.disabled = false;
+    } finally {
+      spinnerEl.style.display = 'none';
     }
+  });
 
-  } catch (err) {
-
-    statusIcon.className = '';
-
-    showStatus(
-      'error',
-      '⚠',
-      err.message || 'Upload failed'
-    );
-
-    uploadBtn.disabled = false;
-
-  } finally {
-    spinnerEl.style.display = 'none';
-  }
-});
+  /* --- Try with sample data --- */
+  demoBtn?.addEventListener('click', () => {
+    saveAnalysis(DEMO_ANALYSIS, {
+      filename: 'sample-ledger.csv (demo data)',
+      uploadedAt: new Date().toISOString(),
+    });
+    window.location.href = 'dashboard.html';
+  });
 
   /* --- Reset on double-click --- */
   dropZone.addEventListener('dblclick', clearSelection);
 
-  // Initial state
   uploadBtn.disabled = true;
 }
 
@@ -505,47 +432,53 @@ function initUploadPage() {
    PAGE: DASHBOARD (dashboard.html)
    ============================================================ */
 function initDashboardPage() {
-  const errorBanner   = document.getElementById('error-banner');
-  const loadingOverlay= document.getElementById('loading-overlay');
+  const errorBanner    = document.getElementById('error-banner');
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const emptyStateEl   = document.getElementById('dashboard-empty-state');
+  const mainEl         = document.getElementById('dashboard-main');
 
   if (!document.getElementById('stat-total-tx')) return; // not on this page
+
+  if (!hasAnalysisData()) {
+    toggleVisible(loadingOverlay, false);
+    if (mainEl) mainEl.style.display = 'none';
+    if (emptyStateEl) emptyStateEl.style.display = 'flex';
+    return;
+  }
+
+  const analysis = getStoredAnalysis();
+  const meta = getStoredMeta();
 
   let allRiskScores  = [];
   let sortDir        = 'desc'; // 'asc' | 'desc'
   let searchQuery    = '';
 
-  /* --- Load stats --- */
-  async function loadStats() {
+  function renderCaseStrip() {
+    safeText(document.getElementById('case-filename'), meta?.filename ?? '—');
+    safeText(
+      document.getElementById('case-uploaded-at'),
+      meta?.uploadedAt ? new Date(meta.uploadedAt).toLocaleString() : '—'
+    );
+  }
+
+  function loadStats() {
     try {
-      const analysis = JSON.parse(
-  localStorage.getItem("analysisData")
-);
-
-const data = analysis.summary;
-
-      safeText(document.getElementById('stat-total-tx'),       formatNumber(data.totalTransactions));
-      safeText(document.getElementById('stat-total-acc'),      formatNumber(data.totalAccounts));
-      safeText(document.getElementById('stat-suspicious'),     formatNumber(data.suspiciousAccounts));
-      safeText(document.getElementById('stat-highest-risk'),   data.highestRiskScore ?? '—');
-
+      const data = analysis.summary || {};
+      safeText(document.getElementById('stat-total-tx'),     formatNumber(data.totalTransactions));
+      safeText(document.getElementById('stat-total-acc'),    formatNumber(data.totalAccounts));
+      safeText(document.getElementById('stat-suspicious'),   formatNumber(data.suspiciousAccounts));
+      safeText(document.getElementById('stat-highest-risk'), data.highestRiskScore ?? '—');
     } catch (err) {
       showError(errorBanner, `Failed to load dashboard stats: ${err.message}`);
     }
   }
 
-  /* --- Load risk scores table --- */
-  async function loadRiskTable() {
+  function loadRiskTable() {
     const tbody = document.getElementById('risk-table-body');
     if (!tbody) return;
 
-    showSkeletonRows(tbody, 6);
-
     try {
-      const analysis = JSON.parse(
-  localStorage.getItem("analysisData")
-);
-
-const scores = analysis.riskData;
+      const scores = analysis.riskData;
       allRiskScores = Array.isArray(scores) ? scores : [];
       renderTable();
     } catch (err) {
@@ -559,32 +492,16 @@ const scores = analysis.riskData;
     }
   }
 
-  function showSkeletonRows(tbody, count) {
-    tbody.innerHTML = '';
-    for (let i = 0; i < count; i++) {
-      const row = tbody.insertRow();
-      row.className = 'skeleton-row';
-      for (let j = 0; j < 3; j++) {
-        const td = row.insertCell();
-        const sk = el('div', 'skeleton skeleton-cell');
-        sk.style.width = j === 0 ? '90px' : j === 1 ? '140px' : '70px';
-        td.appendChild(sk);
-      }
-    }
-  }
-
   function renderTable() {
     const tbody = document.getElementById('risk-table-body');
     const emptyState = document.getElementById('table-empty');
     if (!tbody) return;
 
-    // Filter
     let filtered = allRiskScores.filter(item => {
       if (!searchQuery) return true;
       return (item.account ?? '').toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    // Sort
     filtered.sort((a, b) => sortDir === 'desc' ? b.risk - a.risk : a.risk - b.risk);
 
     tbody.innerHTML = '';
@@ -600,23 +517,23 @@ const scores = analysis.riskData;
       const row = tbody.insertRow();
       row.style.cursor = 'pointer';
 
-      // Rank cell
       const rankCell = row.insertCell();
       rankCell.className = 'mono-cell';
+      rankCell.dataset.label = 'Rank';
       safeText(rankCell, String(idx + 1).padStart(2, '0'));
       rankCell.style.color = 'var(--text-muted)';
       rankCell.style.fontFamily = 'var(--font-mono)';
       rankCell.style.fontSize = '12px';
 
-      // Account cell
       const accCell = row.insertCell();
+      accCell.dataset.label = 'Account';
       const link = el('a', 'account-link', item.account ?? '—');
       link.href = `investigation.html?account=${encodeURIComponent(item.account ?? '')}`;
       link.addEventListener('click', e => e.stopPropagation());
       accCell.appendChild(link);
 
-      // Risk cell
       const riskCell = row.insertCell();
+      riskCell.dataset.label = 'Risk';
       const tier = riskTier(item.risk);
       const wrap = el('div', 'risk-bar-wrap');
       const track = el('div', 'risk-bar-track');
@@ -633,14 +550,12 @@ const scores = analysis.riskData;
       wrap.appendChild(badge);
       riskCell.appendChild(wrap);
 
-      // Row click → investigation
       row.addEventListener('click', () => {
         window.location.href = `investigation.html?account=${encodeURIComponent(item.account ?? '')}`;
       });
     });
   }
 
-  /* --- Search --- */
   const searchInput = document.getElementById('account-search');
   if (searchInput) {
     searchInput.addEventListener('input', () => {
@@ -649,7 +564,6 @@ const scores = analysis.riskData;
     });
   }
 
-  /* --- Sort buttons --- */
   document.querySelectorAll('.sort-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const dir = btn.dataset.sort;
@@ -661,10 +575,11 @@ const scores = analysis.riskData;
     });
   });
 
-  /* --- Init --- */
   (async () => {
     toggleVisible(loadingOverlay, true);
-    await Promise.all([loadStats(), loadRiskTable()]);
+    renderCaseStrip();
+    loadStats();
+    loadRiskTable();
     toggleVisible(loadingOverlay, false);
   })();
 }
@@ -677,74 +592,98 @@ function initInvestigationPage() {
 
   const errorBanner    = document.getElementById('error-banner');
   const loadingOverlay = document.getElementById('loading-overlay');
+  const emptyStateEl   = document.getElementById('investigation-empty-state');
+  const mainEl         = document.getElementById('investigation-main');
+
+  if (!hasAnalysisData()) {
+    toggleVisible(loadingOverlay, false);
+    if (mainEl) mainEl.style.display = 'none';
+    if (emptyStateEl) emptyStateEl.style.display = 'flex';
+    return;
+  }
+
+  const analysis = getStoredAnalysis();
+  const ALL_TRANSACTIONS = Array.isArray(analysis.transactions) ? analysis.transactions : [];
+  const ALL_RISK         = Array.isArray(analysis.riskData) ? analysis.riskData : [];
+
+  /* --- Mission Control header: filename, aggregate risk, status --- */
+  function renderMissionControl() {
+    const meta = getStoredMeta();
+
+    safeText(document.getElementById('mc-filename'), meta?.filename ?? 'Untitled ledger');
+
+    const highestRisk = analysis.summary?.highestRiskScore;
+    const riskTierEl = document.getElementById('mc-risk-tier');
+    const riskPctEl  = document.getElementById('mc-risk-pct');
+
+    if (riskTierEl) {
+      if (typeof highestRisk === 'number') {
+        riskTierEl.textContent = riskLabel(highestRisk).toUpperCase();
+        riskTierEl.className = `mc-risk-tier tier-${riskTier(highestRisk)}`;
+      } else {
+        riskTierEl.textContent = '—';
+        riskTierEl.className = 'mc-risk-tier';
+      }
+    }
+    if (riskPctEl) safeText(riskPctEl, typeof highestRisk === 'number' ? `(${highestRisk}%)` : '');
+
+    const statusEl = document.getElementById('mc-status');
+    const statusTextEl = document.getElementById('mc-status-text');
+    if (statusEl && statusTextEl) {
+      statusEl.classList.remove('status-pending');
+      statusEl.classList.add('status-complete');
+      statusTextEl.textContent = 'COMPLETE';
+    }
+  }
+
   const accountIdEl    = document.getElementById('selected-account-id');
   const riskBadgeEl    = document.getElementById('selected-risk-badge');
   const reportTextEl   = document.getElementById('ai-report-text');
-  const reportBtn =
-  document.getElementById("generate-report");
-
-reportBtn?.addEventListener(
-  "click",
-  async () => {
-
-    reportTextEl.textContent =
-      "Generating AI report...";
-
-    const analysis =
-      JSON.parse(
-        localStorage.getItem("analysisData")
-      );
-
-    try {
-
-      const response =
-        await fetch(
-          "http://localhost:5000/report",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json"
-            },
-            body: JSON.stringify({
-              summary: analysis.summary,
-              riskData: analysis.riskData,
-              graph: analysis.graph
-            })
-          }
-        );
-
-      const data =
-        await response.json();
-
-      reportTextEl.textContent =
-        data.report;
-
-    } catch (err) {
-
-      reportTextEl.textContent =
-        "Failed to generate report.";
-
-      console.error(err);
-    }
-  }
-);
   const reportPlacEl   = document.getElementById('report-placeholder');
-  const noSelectionEl  = document.getElementById('no-selection-state');
+  const reportBtn      = document.getElementById('generate-report');
   const detailsBodyEl  = document.getElementById('account-details-body');
   const txTbodyEl      = document.getElementById('tx-table-body');
   const txEmptyEl      = document.getElementById('tx-empty');
+  const txTableView    = document.getElementById('tx-table-view');
+  const txTimelineView = document.getElementById('tx-timeline-view');
+
+  const noSelectionHTML = detailsBodyEl ? detailsBodyEl.innerHTML : '';
 
   let network = null;
-  let graphData = { nodes: [], edges: [] };
   let selectedNodeId = null;
+  let statusFilter = 'all';
+  let viewMode = 'table';
 
-  /* Parse ?account= from URL safely */
+  /* --- Mobile section switcher (graph/entity/report/history tabs below 1100px) --- */
+  const invWrapperEl = document.getElementById('investigation-main');
+  const invTabButtons = document.querySelectorAll('.inv-tab');
+  const mobileStageQuery = window.matchMedia('(max-width: 1100px)');
+
+  function setActiveTab(tab) {
+    if (!invWrapperEl) return;
+    invWrapperEl.dataset.activeTab = tab;
+    invTabButtons.forEach(btn => {
+      const active = btn.dataset.tab === tab;
+      btn.classList.toggle('inv-tab-active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+    if (tab === 'graph' && network) {
+      // Panel was display:none; vis-network needs a nudge to re-measure and re-center.
+      setTimeout(() => {
+        network.redraw();
+        network.fit({ animation: false });
+      }, 50);
+    }
+  }
+
+  invTabButtons.forEach(btn => {
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+  });
+
   function getAccountParam() {
     try {
       const params = new URLSearchParams(window.location.search);
       const raw = params.get('account') ?? '';
-      // Sanitise: only allow safe characters
       return raw.replace(/[^a-zA-Z0-9\-_]/g, '').slice(0, 64);
     } catch {
       return '';
@@ -753,7 +692,6 @@ reportBtn?.addEventListener(
 
   const preselectedAccount = getAccountParam();
 
-  /* --- Build vis-network color from risk tier --- */
   function nodeStyle(risk) {
     const t = riskTier(risk ?? 0);
     const styles = {
@@ -765,20 +703,151 @@ reportBtn?.addEventListener(
     return styles[t] || styles.low;
   }
 
-  /* --- Load & render graph --- */
-  async function loadGraph() {
-    try {
-      const analysis = JSON.parse(
-  localStorage.getItem("analysisData")
-);
+  function riskOf(accountId) {
+    const entry = ALL_RISK.find(r => r.account === accountId);
+    return entry ? entry.risk : null;
+  }
 
-const data = analysis.graph;
+  /* --- Derive entity stats client-side from real graph + tx data --- */
+  function computeEntityStats(accountId) {
+    const related = ALL_TRANSACTIONS.filter(t =>
+      (t.from ?? t.sender) === accountId || (t.to ?? t.receiver) === accountId
+    );
+    const totalVolume = related.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const counterparties = new Set();
+    related.forEach(t => {
+      const from = t.from ?? t.sender;
+      const to = t.to ?? t.receiver;
+      if (from && from !== accountId) counterparties.add(from);
+      if (to && to !== accountId) counterparties.add(to);
+    });
+
+    const flaggedCount = related.filter(t => t.status === 'Flagged').length;
+    const dates = related.map(t => t.date).filter(Boolean).sort();
+
+    return {
+      account: accountId,
+      risk: riskOf(accountId),
+      txCount: related.length,
+      totalVolume,
+      counterpartyCount: counterparties.size,
+      flaggedCount,
+      firstSeen: dates[0] ?? null,
+      lastSeen: dates[dates.length - 1] ?? null,
+    };
+  }
+
+  function renderAccountDetails(stats) {
+    if (!detailsBodyEl) return;
+    detailsBodyEl.innerHTML = '';
+
+    const rows = [
+      { label: 'Account ID',        value: stats.account },
+      { label: 'Risk Score',        value: stats.risk != null ? `${stats.risk} — ${riskLabel(stats.risk)}` : '—' },
+      { label: 'Total Volume',      value: formatCurrency(stats.totalVolume) },
+      { label: 'Transaction Count',value: formatNumber(stats.txCount) },
+      { label: 'Counterparties',    value: formatNumber(stats.counterpartyCount) },
+      { label: 'Flagged Transfers', value: formatNumber(stats.flaggedCount) },
+      { label: 'First Seen',        value: stats.firstSeen ?? '—' },
+      { label: 'Last Seen',         value: stats.lastSeen ?? '—' },
+    ];
+
+    rows.forEach(r => {
+      const row = el('div', 'detail-row');
+      row.appendChild(el('span', 'detail-label', r.label));
+      row.appendChild(el('span', 'detail-value', r.value));
+      detailsBodyEl.appendChild(row);
+    });
+
+    if (accountIdEl) safeText(accountIdEl, stats.account ?? '—');
+    if (riskBadgeEl) {
+      if (stats.risk != null) {
+        const tier = riskTier(stats.risk);
+        riskBadgeEl.className = `fcis-badge mc-entity-badge badge-${tier}`;
+        riskBadgeEl.textContent = `${stats.account} — ${riskLabel(stats.risk)} (${stats.risk})`;
+      } else {
+        riskBadgeEl.className = 'fcis-badge mc-entity-badge';
+        riskBadgeEl.textContent = stats.account ?? 'None';
+      }
+    }
+  }
+
+  function resetDetailsPanel() {
+    if (detailsBodyEl) detailsBodyEl.innerHTML = noSelectionHTML;
+    if (accountIdEl) safeText(accountIdEl, '—');
+    if (riskBadgeEl) { riskBadgeEl.className = 'fcis-badge mc-entity-badge'; riskBadgeEl.textContent = 'None'; }
+    if (reportTextEl) reportTextEl.textContent = '';
+    if (reportPlacEl) {
+      toggleVisible(reportPlacEl, true);
+      safeText(reportPlacEl, 'Select an entity, then generate its investigation report.');
+    }
+    if (reportBtn) reportBtn.disabled = true;
+    safeText(document.getElementById('page-account-label'), '');
+  }
+
+  function selectNode(nodeId) {
+    selectedNodeId = nodeId;
+    const stats = computeEntityStats(nodeId);
+    renderAccountDetails(stats);
+    filterTransactions();
+
+    if (mobileStageQuery.matches) setActiveTab('details');
+
+    if (reportBtn) reportBtn.disabled = false;
+    if (reportTextEl) reportTextEl.textContent = '';
+    if (reportPlacEl) {
+      toggleVisible(reportPlacEl, true);
+      safeText(reportPlacEl, 'Click "Generate AI Report" to analyse this entity.');
+    }
+    safeText(document.getElementById('page-account-label'), nodeId);
+  }
+
+  /* --- AI report generation (backend call, one entity at a time) --- */
+  reportBtn?.addEventListener('click', async () => {
+    if (!selectedNodeId) return;
+
+    reportBtn.disabled = true;
+    if (reportPlacEl) toggleVisible(reportPlacEl, false);
+    if (reportTextEl) reportTextEl.textContent = 'Generating AI report…';
+
+    try {
+      const response = await fetch(CONFIG.REPORT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account: selectedNodeId,
+          summary: analysis.summary,
+          riskData: analysis.riskData,
+          graph: analysis.graph,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Report request failed (HTTP ${response.status}).`);
+
+      const data = await response.json();
+      if (reportTextEl) reportTextEl.textContent = data.report || 'No report content returned.';
+
+    } catch (err) {
+      if (reportTextEl) reportTextEl.textContent = '';
+      if (reportPlacEl) {
+        toggleVisible(reportPlacEl, true);
+        safeText(reportPlacEl, `Couldn't generate a report: ${err.message}`);
+      }
+      console.error(err);
+    } finally {
+      reportBtn.disabled = false;
+    }
+  });
+
+  /* --- Load & render graph --- */
+  function loadGraph() {
+    try {
+      const data = analysis.graph;
 
       if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
-        throw new Error('Invalid graph data received from server.');
+        throw new Error('No graph data available for this ledger.');
       }
-
-      graphData = data;
 
       const visNodes = data.nodes.map(n => {
         const s = nodeStyle(n.risk ?? 0);
@@ -851,7 +920,6 @@ const data = analysis.graph;
 
       network = new vis.Network(container, { nodes: visDataNodes, edges: visDataEdges }, options);
 
-      /* Gentle hover scaling — node grows softly on hover, settles back on blur */
       const baseSizes = new Map(visNodes.map(n => [n.id, n.size]));
       network.on('hoverNode', params => {
         const base = baseSizes.get(params.node);
@@ -862,21 +930,18 @@ const data = analysis.graph;
         if (base != null) visDataNodes.update({ id: params.node, size: base });
       });
 
-      /* Node selection handler */
       network.on('selectNode', params => {
         const nodeId = params.nodes?.[0];
         if (!nodeId) return;
-        selectedNodeId = nodeId;
-        loadNodeDetails(nodeId);
-        filterTransactions(nodeId);
+        selectNode(nodeId);
       });
 
       network.on('deselectNode', () => {
         selectedNodeId = null;
         resetDetailsPanel();
+        filterTransactions();
       });
 
-      /* Zoom controls */
       document.getElementById('graph-zoom-in')?.addEventListener('click', () =>
         network.moveTo({ scale: network.getScale() * 1.25, animation: { duration: 200 } })
       );
@@ -887,13 +952,11 @@ const data = analysis.graph;
         network.fit({ animation: { duration: 400 } })
       );
 
-      /* If URL has account param, select that node */
       if (preselectedAccount && data.nodes.some(n => n.id === preselectedAccount)) {
         setTimeout(() => {
           network.selectNodes([preselectedAccount]);
           network.focus(preselectedAccount, { scale: 1.4, animation: { duration: 600 } });
-          loadNodeDetails(preselectedAccount);
-          filterTransactions(preselectedAccount);
+          selectNode(preselectedAccount);
         }, 800);
       }
 
@@ -902,111 +965,48 @@ const data = analysis.graph;
     }
   }
 
-  /* --- Load account details + AI report --- */
-  async function loadNodeDetails(accountId) {
-    if (!accountId) return;
-
-    toggleVisible(noSelectionEl, false);
-
-    // Show loading state in details
-    if (detailsBodyEl) {
-      detailsBodyEl.innerHTML = '';
-      const loadMsg = el('p', 'report-placeholder', '⏳ Loading entity profile…');
-      detailsBodyEl.appendChild(loadMsg);
-    }
-
-    if (reportTextEl)  reportTextEl.textContent = '';
-    toggleVisible(reportPlacEl, false);
-
-    try {
-      const inv = await SimAPI.getInvestigation(accountId);
-
-      renderAccountDetails(inv);
-      renderReport(inv);
-    } catch (err) {
-      showError(errorBanner, `Investigation load failed: ${err.message}`);
-    }
-  }
-
-  function renderAccountDetails(inv) {
-    if (!inv || !detailsBodyEl) return;
-
-    detailsBodyEl.innerHTML = '';
-
-    const rows = [
-      { label: 'Account ID',     value: inv.account      ?? '—' },
-      { label: 'Registered Name',value: inv.registeredName ?? '—' },
-      { label: 'Jurisdiction',   value: inv.jurisdiction  ?? '—' },
-      { label: 'Flagged Since',  value: inv.flaggedSince  ?? '—' },
-      { label: 'Total Volume',   value: inv.totalVolume   ?? '—' },
-      { label: 'Transaction Count', value: inv.txCount != null ? formatNumber(inv.txCount) : '—' },
-    ];
-
-    rows.forEach(r => {
-      const row = el('div', 'detail-row');
-      const lbl = el('span', 'detail-label', r.label);
-      const val = el('span', 'detail-value', r.value);
-      row.appendChild(lbl);
-      row.appendChild(val);
-      detailsBodyEl.appendChild(row);
+  /* --- Filters + view toggle --- */
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      statusFilter = chip.dataset.status;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('filter-chip-active'));
+      chip.classList.add('filter-chip-active');
+      filterTransactions();
     });
+  });
 
-    // Risk badge
-    if (accountIdEl) safeText(accountIdEl, inv.account ?? '—');
-    if (riskBadgeEl && inv.risk != null) {
-      const tier  = riskTier(inv.risk);
-      riskBadgeEl.className = `fcis-badge badge-${tier}`;
-      riskBadgeEl.textContent = `Risk: ${inv.risk} — ${riskLabel(inv.risk)}`;
+  document.querySelectorAll('.tx-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      viewMode = btn.dataset.view;
+      document.querySelectorAll('.tx-view-btn').forEach(b => b.classList.remove('tx-view-active'));
+      btn.classList.add('tx-view-active');
+      filterTransactions();
+    });
+  });
+
+  function filterTransactions() {
+    let list = ALL_TRANSACTIONS;
+
+    if (selectedNodeId) {
+      list = list.filter(t =>
+        (t.from ?? t.sender) === selectedNodeId || (t.to ?? t.receiver) === selectedNodeId
+      );
     }
-  }
-
-  function renderReport(inv) {
-    if (!inv) return;
-
-    if (inv.report) {
-      safeText(reportTextEl, inv.report);
-      toggleVisible(reportPlacEl, false);
-    } else {
-      safeText(reportTextEl, '');
-      toggleVisible(reportPlacEl, true);
-      if (reportPlacEl) safeText(reportPlacEl, 'Select an entity to generate its investigation report.');
+    if (statusFilter !== 'all') {
+      list = list.filter(t => t.status === statusFilter);
     }
+
+    const countBadge = document.getElementById('tx-count-badge');
+    if (countBadge) safeText(countBadge, `${list.length} tx`);
+
+    if (txTableView) txTableView.style.display = viewMode === 'table' ? '' : 'none';
+    if (txTimelineView) txTimelineView.style.display = viewMode === 'timeline' ? '' : 'none';
+
+    if (viewMode === 'table') renderTransactionsTable(list);
+    else renderTransactionsTimeline(list);
   }
 
-  function resetDetailsPanel() {
-    if (noSelectionEl) toggleVisible(noSelectionEl, true);
-    if (detailsBodyEl) detailsBodyEl.innerHTML = '';
-    if (accountIdEl)   safeText(accountIdEl, '—');
-    if (riskBadgeEl)   { riskBadgeEl.className = 'fcis-badge'; riskBadgeEl.textContent = ''; }
-    if (reportTextEl)  reportTextEl.textContent = '';
-    if (reportPlacEl)  {
-      toggleVisible(reportPlacEl, true);
-      safeText(reportPlacEl, 'Select an entity to generate its investigation report.');
-    }
-  }
-
-  const analysis = JSON.parse(
-  localStorage.getItem("analysisData")
-);
-
-const REAL_TRANSACTIONS =
-  analysis.transactions || [];
-
-  /* --- Transaction table --- */
-  function filterTransactions(accountId) {
-    if (!txTbodyEl) return;
-    const filtered = accountId
-  ? REAL_TRANSACTIONS.filter(t =>
-  t.from === accountId ||
-  t.to === accountId ||
-  t.sender === accountId ||
-  t.receiver === accountId
-)
-  : REAL_TRANSACTIONS;
-    renderTransactions(filtered);
-  }
-
-  function renderTransactions(list) {
+  function renderTransactionsTable(list) {
     if (!txTbodyEl) return;
     txTbodyEl.innerHTML = '';
 
@@ -1014,41 +1014,31 @@ const REAL_TRANSACTIONS =
       toggleVisible(txEmptyEl, true);
       return;
     }
-
     toggleVisible(txEmptyEl, false);
 
-    list.forEach(tx => {
+    list.forEach((tx, idx) => {
       const row = txTbodyEl.insertRow();
 
       const cells = [
-        {
-  val: tx.id ?? `TXN-${String(list.indexOf(tx) + 1).padStart(3,'0')}`,
-  cls: 'mono-cell'
-},
-{ val: tx.from ?? tx.sender ?? '—', cls: 'mono-cell' },
-{ val: tx.to ?? tx.receiver ?? '—', cls: 'mono-cell' },
-        {
-  val: tx.amount
-    ? formatCurrency(Number(tx.amount))
-    : '—',
-  cls: 'mono-cell'
-},
-        { val: tx.date   ?? '—', cls: 'mono-cell' },
-        { val: null,             cls: '' }, // status badge — built separately
+        { val: tx.id ?? `TXN-${String(idx + 1).padStart(3, '0')}`, cls: 'mono-cell', label: 'Tx ID' },
+        { val: tx.from ?? tx.sender ?? '—', cls: 'mono-cell', label: 'From' },
+        { val: tx.to ?? tx.receiver ?? '—', cls: 'mono-cell', label: 'To' },
+        { val: tx.amount ? formatCurrency(Number(tx.amount)) : '—', cls: 'mono-cell', label: 'Amount' },
+        { val: tx.date ?? '—', cls: 'mono-cell', label: 'Timestamp' },
+        { val: null, cls: '', label: 'Status' },
       ];
 
       cells.forEach((c, i) => {
         const td = row.insertCell();
         if (c.cls) td.className = c.cls;
+        td.dataset.label = c.label;
 
         if (i === 5) {
-          // Status badge
           const tier =
             tx.status === 'Flagged'    ? 'critical' :
             tx.status === 'Suspicious' ? 'high'     :
             'low';
-          const badge = el('span', `fcis-badge badge-${tier}`, tx.status ?? '—');
-          td.appendChild(badge);
+          td.appendChild(el('span', `fcis-badge badge-${tier}`, tx.status ?? '—'));
         } else {
           safeText(td, c.val);
         }
@@ -1056,20 +1046,55 @@ const REAL_TRANSACTIONS =
     });
   }
 
+  function renderTransactionsTimeline(list) {
+    if (!txTimelineView) return;
+    txTimelineView.innerHTML = '';
+
+    if (!list || list.length === 0) {
+      toggleVisible(txEmptyEl, true);
+      return;
+    }
+    toggleVisible(txEmptyEl, false);
+
+    const sorted = [...list].sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+
+    sorted.forEach(tx => {
+      const tier =
+        tx.status === 'Flagged'    ? 'critical' :
+        tx.status === 'Suspicious' ? 'high'     :
+        'low';
+
+      const item = el('div', 'timeline-item');
+      const dot  = el('span', `timeline-dot timeline-dot-${tier}`);
+      const body = el('div', 'timeline-body');
+      const head = el('div', 'timeline-head');
+
+      head.appendChild(el('span', 'timeline-date mono', tx.date ?? '—'));
+      head.appendChild(el('span', `fcis-badge badge-${tier}`, tx.status ?? '—'));
+
+      const desc = el(
+        'div', 'timeline-desc',
+        `${tx.from ?? tx.sender ?? '—'} → ${tx.to ?? tx.receiver ?? '—'} · ${tx.amount ? formatCurrency(Number(tx.amount)) : '—'}`
+      );
+
+      body.appendChild(head);
+      body.appendChild(desc);
+      item.appendChild(dot);
+      item.appendChild(body);
+      txTimelineView.appendChild(item);
+    });
+  }
+
   /* --- Init --- */
   (async () => {
     toggleVisible(loadingOverlay, true);
 
-    renderTransactions(REAL_TRANSACTIONS);
+    renderMissionControl();
     resetDetailsPanel();
-
-    await loadGraph();
+    filterTransactions();
+    loadGraph();
 
     toggleVisible(loadingOverlay, false);
-
-    if (preselectedAccount) {
-      safeText(document.getElementById('page-account-label'), preselectedAccount);
-    }
   })();
 }
 
@@ -1077,6 +1102,9 @@ const REAL_TRANSACTIONS =
    ROUTER — call the right init function based on current page
    ============================================================ */
 function route() {
+  initNavGuard();
+  initMobileNav();
+
   const path = window.location.pathname;
 
   if (path.endsWith('index.html') || path === '/' || path.endsWith('/')) {
@@ -1092,3 +1120,512 @@ document.addEventListener('DOMContentLoaded', route);
 
 
 
+(function () {
+  const STORAGE_KEY = 'analysisData';
+
+  const feedEl      = document.getElementById('activity-feed');
+  const liveBadgeEl = document.getElementById('activity-live-badge');
+  const liveTextEl  = document.getElementById('activity-live-text');
+
+  if (!feedEl) return; // not on the investigation page
+
+  /* --- helpers --- */
+
+  function nowStamp() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function getAnalysis() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function logEntry(text, tone = 'ok') {
+    const row = document.createElement('div');
+    row.className = `activity-entry activity-${tone}`;
+
+    const icon = document.createElement('span');
+    icon.className = 'activity-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = tone === 'ok' ? '✓' : tone === 'warn' ? '!' : '›';
+
+    const msg = document.createElement('span');
+    msg.className = 'activity-msg';
+    msg.textContent = text;
+
+    const time = document.createElement('span');
+    time.className = 'activity-time';
+    time.textContent = nowStamp();
+
+    row.appendChild(icon);
+    row.appendChild(msg);
+    row.appendChild(time);
+    feedEl.appendChild(row);
+
+    // Keep the log tailed like a real console.
+    feedEl.scrollTop = feedEl.scrollHeight;
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /* --- lightweight analysis of the already-loaded data, so the
+     feed reflects what's actually in the ledger rather than being
+     purely decorative --- */
+
+  function detectCircularFlow(graph) {
+    if (!graph || !Array.isArray(graph.edges) || graph.edges.length === 0) return false;
+
+    const adjacency = new Map();
+    graph.edges.forEach(e => {
+      if (!e || !e.from || !e.to) return;
+      if (!adjacency.has(e.from)) adjacency.set(e.from, []);
+      adjacency.get(e.from).push(e.to);
+    });
+
+    let steps = 0;
+    const STEP_CAP = 800; // keep this cheap regardless of graph size
+
+    function hasCycleFrom(start) {
+      const stack = [[start, new Set([start])]];
+      while (stack.length && steps < STEP_CAP) {
+        steps++;
+        const [node, path] = stack.pop();
+        const neighbors = adjacency.get(node) || [];
+        for (const next of neighbors) {
+          if (next === start && path.size > 1) return true;
+          if (!path.has(next)) {
+            const nextPath = new Set(path);
+            nextPath.add(next);
+            stack.push([next, nextPath]);
+          }
+        }
+      }
+      return false;
+    }
+
+    for (const node of adjacency.keys()) {
+      if (steps >= STEP_CAP) break;
+      if (hasCycleFrom(node)) return true;
+    }
+    return false;
+  }
+
+  function findHighestRisk(riskData) {
+    if (!Array.isArray(riskData) || riskData.length === 0) return null;
+    return riskData.reduce(
+      (max, r) => (r && typeof r.risk === 'number' && r.risk > (max?.risk ?? -1) ? r : max),
+      null
+    );
+  }
+
+  /* --- boot sequence: replays the pipeline as a system log --- */
+
+  async function runBootSequence() {
+    const analysis = getAnalysis();
+    if (!analysis) return; // nothing analysed yet — parent page shows its own empty state
+
+    const txCount    = Array.isArray(analysis.transactions) ? analysis.transactions.length : 0;
+    const nodeCount   = analysis.graph && Array.isArray(analysis.graph.nodes) ? analysis.graph.nodes.length : 0;
+    const edgeCount   = analysis.graph && Array.isArray(analysis.graph.edges) ? analysis.graph.edges.length : 0;
+    const hasCycle    = detectCircularFlow(analysis.graph);
+    const topRisk     = findHighestRisk(analysis.riskData);
+
+    const steps = [
+      { text: 'CSV Parsed', delay: 260 },
+      { text: txCount ? `Transactions Loaded (${txCount})` : 'Transactions Loaded', delay: 420 },
+      { text: nodeCount ? `Network Built (${nodeCount} nodes, ${edgeCount} links)` : 'Network Built', delay: 480 },
+    ];
+
+    if (hasCycle) {
+      steps.push({ text: 'Circular Flow Detected', delay: 420, tone: 'warn' });
+    }
+    if (topRisk && topRisk.risk >= 60) {
+      steps.push({ text: `High Risk Node Identified — ${topRisk.account} (${topRisk.risk})`, delay: 420, tone: 'warn' });
+    }
+
+    steps.push({ text: 'Report Ready', delay: 320 });
+
+    for (const step of steps) {
+      await delay(step.delay);
+      logEntry(step.text, step.tone || 'ok');
+    }
+
+    if (liveBadgeEl && liveTextEl) {
+      liveBadgeEl.classList.add('activity-idle');
+      liveTextEl.textContent = 'IDLE';
+    }
+  }
+
+  /* --- live reactions to user interaction on the graph, without
+     touching graph logic: just watch the two DOM nodes app.js
+     already keeps in sync --- */
+
+  function watchEntitySelection() {
+    const label = document.getElementById('page-account-label');
+    if (!label || typeof MutationObserver === 'undefined') return;
+
+    let last = label.textContent.trim();
+    const observer = new MutationObserver(() => {
+      const current = label.textContent.trim();
+      if (current === last) return;
+      last = current;
+      if (current) {
+        setLiveBriefly();
+        logEntry(`Entity Selected — ${current}`, 'info');
+      }
+    });
+    observer.observe(label, { childList: true, characterData: true, subtree: true });
+  }
+
+  function watchReportGeneration() {
+    const reportText = document.getElementById('ai-report-text');
+    if (!reportText || typeof MutationObserver === 'undefined') return;
+
+    const observer = new MutationObserver(() => {
+      const current = reportText.textContent.trim();
+      if (!current) return;
+
+      if (current === 'Generating AI report…') {
+        setLiveBriefly();
+        logEntry('Generating AI Report…', 'info');
+        return;
+      }
+
+      setLiveBriefly();
+      logEntry('AI Report Generated', 'ok');
+    });
+    observer.observe(reportText, { childList: true, characterData: true, subtree: true });
+  }
+
+  function setLiveBriefly() {
+    if (!liveBadgeEl || !liveTextEl) return;
+    liveBadgeEl.classList.remove('activity-idle');
+    liveTextEl.textContent = 'LIVE';
+    clearTimeout(setLiveBriefly._t);
+    setLiveBriefly._t = setTimeout(() => {
+      liveBadgeEl.classList.add('activity-idle');
+      liveTextEl.textContent = 'IDLE';
+    }, 4000);
+  }
+
+  function init() {
+    watchEntitySelection();
+    watchReportGeneration();
+    runBootSequence();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+
+(function () {
+  const STORAGE_KEY = 'analysisData';
+  const SUSPICIOUS_RISK_THRESHOLD = 40; // medium tier and above
+
+  const tbody       = document.getElementById('suspicious-table-body');
+  const countBadge  = document.getElementById('suspicious-count-badge');
+  const emptyEl     = document.getElementById('suspicious-empty');
+  const headerCells = document.querySelectorAll('.suspicious-table thead th.sortable');
+
+  if (!tbody) return; // not on this page
+
+  /* --- data --- */
+
+  function getAnalysis() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function riskTier(score) {
+    if (score >= 80) return 'critical';
+    if (score >= 60) return 'high';
+    if (score >= 40) return 'medium';
+    return 'low';
+  }
+
+  function riskLabel(score) {
+    const t = riskTier(score);
+    return { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }[t];
+  }
+
+  function statusTier(status) {
+    if (status === 'Flagged') return 'critical';
+    if (status === 'Suspicious') return 'high';
+    if (status === 'Clear') return 'low';
+    return 'medium'; // Unverified — risk-flagged but no matching ledger activity found
+  }
+
+  function buildRows(analysis) {
+    const riskData     = Array.isArray(analysis.riskData) ? analysis.riskData : [];
+    const transactions = Array.isArray(analysis.transactions) ? analysis.transactions : [];
+
+    return riskData
+      .filter(r => r && typeof r.risk === 'number' && r.risk >= SUSPICIOUS_RISK_THRESHOLD)
+      .map(r => {
+        const related = transactions.filter(t =>
+          (t.from ?? t.sender) === r.account || (t.to ?? t.receiver) === r.account
+        );
+
+        const counterparties = new Set();
+        let hasFlagged = false;
+        let hasSuspicious = false;
+
+        related.forEach(t => {
+          const from = t.from ?? t.sender;
+          const to   = t.to ?? t.receiver;
+          if (from && from !== r.account) counterparties.add(from);
+          if (to && to !== r.account) counterparties.add(to);
+          if (t.status === 'Flagged') hasFlagged = true;
+          if (t.status === 'Suspicious') hasSuspicious = true;
+        });
+
+        let status = 'Unverified';
+        if (hasFlagged) status = 'Flagged';
+        else if (hasSuspicious) status = 'Suspicious';
+        else if (related.length > 0) status = 'Clear';
+
+        return {
+          account: r.account,
+          risk: r.risk,
+          transfers: related.length,
+          status,
+          connections: counterparties.size,
+        };
+      });
+  }
+
+  /* --- state --- */
+
+  let rows = [];
+  let sortKey = 'risk';
+  let sortDir = 'desc';
+
+  function sortRows() {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    });
+  }
+
+  /* --- render --- */
+
+  function goToAccount(accountId) {
+    window.location.href = `investigation.html?account=${encodeURIComponent(accountId)}`;
+  }
+
+  function renderRows() {
+    tbody.innerHTML = '';
+
+    if (rows.length === 0) {
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.tabIndex = 0;
+      tr.setAttribute('role', 'button');
+      tr.setAttribute('aria-label', `Investigate ${row.account}`);
+
+      const accCell = document.createElement('td');
+      accCell.dataset.label = 'Account';
+      const link = document.createElement('a');
+      link.href = `investigation.html?account=${encodeURIComponent(row.account)}`;
+      link.className = 'account-link';
+      link.textContent = row.account;
+      link.addEventListener('click', e => e.stopPropagation());
+      accCell.appendChild(link);
+
+      const riskCell = document.createElement('td');
+      riskCell.dataset.label = 'Risk';
+      riskCell.className = 'mono-cell';
+      const riskBadge = document.createElement('span');
+      riskBadge.className = `fcis-badge badge-${riskTier(row.risk)}`;
+      riskBadge.textContent = `${row.risk} · ${riskLabel(row.risk)}`;
+      riskCell.appendChild(riskBadge);
+
+      const transfersCell = document.createElement('td');
+      transfersCell.dataset.label = 'Transfers';
+      transfersCell.className = 'mono-cell';
+      transfersCell.textContent = String(row.transfers);
+
+      const statusCell = document.createElement('td');
+      statusCell.dataset.label = 'Status';
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `fcis-badge badge-${statusTier(row.status)}`;
+      statusBadge.textContent = row.status;
+      statusCell.appendChild(statusBadge);
+
+      const connCell = document.createElement('td');
+      connCell.dataset.label = 'Connections';
+      connCell.className = 'mono-cell';
+      connCell.textContent = String(row.connections);
+
+      tr.appendChild(accCell);
+      tr.appendChild(riskCell);
+      tr.appendChild(transfersCell);
+      tr.appendChild(statusCell);
+      tr.appendChild(connCell);
+
+      tr.addEventListener('click', () => goToAccount(row.account));
+      tr.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          goToAccount(row.account);
+        }
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function updateSortIndicators() {
+    headerCells.forEach(th => {
+      const key = th.dataset.sortKey;
+      const icon = th.querySelector('.sort-icon');
+      const active = key === sortKey;
+      th.classList.toggle('sort-active', active);
+      if (icon) {
+        icon.textContent = active ? (sortDir === 'asc' ? '↑' : '↓') : '↕';
+        icon.classList.toggle('active', active);
+      }
+    });
+  }
+
+  function updateCountBadge() {
+    if (countBadge) countBadge.textContent = `${rows.length} flagged`;
+  }
+
+  headerCells.forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sortKey;
+      if (sortKey === key) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortKey = key;
+        sortDir = (key === 'account' || key === 'status') ? 'asc' : 'desc';
+      }
+      sortRows();
+      updateSortIndicators();
+      renderRows();
+    });
+  });
+
+  /* --- init --- */
+
+  function init() {
+    const analysis = getAnalysis();
+    if (!analysis) return; // parent page already shows its own empty state
+
+    rows = buildRows(analysis);
+    sortRows();
+    updateSortIndicators();
+    updateCountBadge();
+    renderRows();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+
+/* ============================================================
+   DASHBOARD: CIRCULAR RISK GAUGE (new — appended, nothing above
+   this line was changed)
+
+   Presentation-only. Reads the same analysis.summary.highestRiskScore
+   already used above and reuses the existing riskTier() thresholds
+   untouched — the risk calculation itself is not modified here,
+   only how the number is displayed.
+   ============================================================ */
+(function () {
+  const cardEl    = document.getElementById('risk-gauge-card') || document.querySelector('.risk-gauge-card');
+  const fillEl    = document.getElementById('risk-gauge-fill');
+  const percentEl = document.getElementById('risk-gauge-percent');
+  const levelEl   = document.getElementById('risk-gauge-level');
+
+  if (!fillEl || !percentEl || !levelEl) return; // not on dashboard.html
+
+  const RADIUS = 58;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+  // Green = Safe, Amber = Warning, Orange = Elevated, Red = Critical.
+  // Same four tiers/thresholds riskTier() already uses everywhere else.
+  const GAUGE_COLOR_VAR = {
+    low:      '--low',      // green
+    medium:   '--medium',   // amber
+    high:     '--high',     // orange
+    critical: '--critical', // red
+  };
+
+  const GAUGE_LEVEL_LABEL = {
+    low:      'Safe',
+    medium:   'Warning',
+    high:     'Elevated',
+    critical: 'Critical',
+  };
+
+  fillEl.style.strokeDasharray = `${CIRCUMFERENCE} ${CIRCUMFERENCE}`;
+  fillEl.style.strokeDashoffset = `${CIRCUMFERENCE}`;
+
+  function renderGauge() {
+    if (typeof hasAnalysisData !== 'function' || !hasAnalysisData()) return;
+
+    const analysis = typeof getStoredAnalysis === 'function' ? getStoredAnalysis() : null;
+    const score = analysis?.summary?.highestRiskScore;
+
+    if (typeof score !== 'number' || Number.isNaN(score)) {
+      percentEl.textContent = '—';
+      levelEl.textContent = '';
+      return;
+    }
+
+    const clamped = Math.max(0, Math.min(100, score));
+    const tier = riskTier(clamped); // unchanged existing function — same cutoffs as the rest of the app
+    const colorVar = `var(${GAUGE_COLOR_VAR[tier] || GAUGE_COLOR_VAR.low})`;
+    const levelWord = GAUGE_LEVEL_LABEL[tier] || GAUGE_LEVEL_LABEL.low;
+
+    percentEl.textContent = `${Math.round(clamped)}%`;
+    levelEl.textContent = levelWord;
+    levelEl.style.color = colorVar;
+    fillEl.style.stroke = colorVar;
+
+    if (cardEl) cardEl.style.setProperty('--gauge-accent', colorVar);
+
+    // Paint the empty ring first, then animate to the real value on the
+    // next frame so the fill sweeps in smoothly instead of snapping.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const offset = CIRCUMFERENCE * (1 - clamped / 100);
+        fillEl.style.strokeDashoffset = `${offset}`;
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', renderGauge);
+})();

@@ -6,7 +6,7 @@
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
   <meta http-equiv="X-Frame-Options" content="DENY" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
-  <title>FinLens</title>
+  <title>FinLens — Investigation</title>
 
   <link
     rel="stylesheet"
@@ -21,10 +21,8 @@
 
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-
 <link rel="apple-touch-icon" sizes="192x192" href="favicon-192x192.png">
 </head>
 <body>
@@ -33,24 +31,32 @@
   <nav class="fcis-navbar">
     <a href="index.html" class="fcis-brand">
       <div class="fcis-brand-icon">
-        <!-- Magnifying glass -->
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/>
           <line x1="16.5" y1="16.5" x2="22" y2="22"/>
         </svg>
       </div>
-      <span class="fcis-brand-name">FCIS</span>
-      
+      <span class="fcis-brand-name">FinLens</span>
     </a>
 
-    <div class="fcis-nav-links">
-      <a href="index.html"         class="fcis-nav-link">Upload</a>
-      <a href="dashboard.html"     class="fcis-nav-link">Dashboard</a>
-      <a href="investigation.html" class="fcis-nav-link active">Investigation</a>
+    <div class="fcis-nav-links" id="fcis-nav-links">
+      <a href="index.html" class="fcis-nav-link">Upload</a>
+      <a href="dashboard.html" class="fcis-nav-link" data-requires-upload>Dashboard</a>
+      <a href="investigation.html" class="fcis-nav-link active" data-requires-upload>Investigation</a>
     </div>
 
-    <span class="status-dot">SYSTEM ONLINE</span>
+    <div class="fcis-navbar-right">
+      <span class="status-dot"><span class="status-text">SYSTEM ONLINE</span></span>
+      <button class="fcis-menu-toggle" id="nav-menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="fcis-nav-links">
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+      </button>
+    </div>
   </nav>
+  <div class="nav-menu-backdrop" id="nav-menu-backdrop"></div>
+
+  <div id="nav-toast" class="nav-toast" role="status" aria-live="polite"></div>
 
   <!-- Error banner -->
   <div id="error-banner" class="error-banner mx-4 mt-4" role="alert" aria-live="assertive">
@@ -58,23 +64,94 @@
     <span class="error-msg"></span>
   </div>
 
-  <div class="investigation-wrapper">
+  <!-- ===================== EMPTY STATE (no upload yet) ===================== -->
+  <div id="investigation-empty-state" class="page-empty-state" style="display:none;">
+    <div class="empty-illustration" aria-hidden="true">
+      <i class="bi bi-diagram-3"></i>
+    </div>
 
-    <!-- Top bar -->
-    <div class="inv-top-bar">
-      <div>
-        <h1 class="page-title" style="font-size:17px;">
-          Money Trail Investigation
-          <span id="page-account-label" style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);margin-left:8px;"></span>
-        </h1>
-        <p class="page-subtitle">Select an entity to trace fund flow and load the case file</p>
+    <h2>No investigation loaded.</h2>
+    <p class="empty-lede">Upload a transaction file to begin analysis.</p>
+
+    <a href="index.html" class="btn-fcis-primary">
+      <i class="bi bi-upload" aria-hidden="true"></i>
+      Upload Transaction File
+    </a>
+
+    <ul class="empty-guidance">
+      <li><i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV files up to 50&nbsp;MB</li>
+      <li><i class="bi bi-share" aria-hidden="true"></i> The money-trail graph and entity workspace build from that upload</li>
+      <li><i class="bi bi-speedometer2" aria-hidden="true"></i> Already have data? Check the Dashboard first</li>
+    </ul>
+  </div>
+
+  <div class="investigation-wrapper" id="investigation-main" data-active-tab="graph">
+
+    <!-- Mission Control header -->
+    <header class="mission-control" aria-label="Analysis overview">
+      <div class="mission-control-primary">
+        <span class="mc-eyebrow">
+          <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+          Uploaded File
+        </span>
+        <h1 class="mc-filename" id="mc-filename">—</h1>
+        <p class="mc-subline">
+          Select an entity in the network to trace fund flow
+          <span id="page-account-label" class="mc-selected-entity"></span>
+        </p>
       </div>
-      <div class="d-flex gap-2 align-center">
-        <span id="selected-risk-badge" class="fcis-badge" aria-live="polite"></span>
+
+      <div class="mission-control-stats">
+        <div class="mc-stat">
+          <span class="mc-stat-label">Risk Score</span>
+          <span class="mc-stat-value">
+            <span id="mc-risk-tier" class="mc-risk-tier">—</span>
+            <span id="mc-risk-pct" class="mc-risk-pct"></span>
+          </span>
+        </div>
+
+        <div class="mc-stat-divider" aria-hidden="true"></div>
+
+        <div class="mc-stat">
+          <span class="mc-stat-label">Analysis Status</span>
+          <span id="mc-status" class="mc-stat-value mc-status-value">
+            <span class="mc-status-dot" aria-hidden="true"></span>
+            <span id="mc-status-text">PENDING</span>
+          </span>
+        </div>
+
+        <div class="mc-stat-divider" aria-hidden="true"></div>
+
+        <div class="mc-stat">
+          <span class="mc-stat-label">Selected Entity</span>
+          <span id="selected-risk-badge" class="fcis-badge mc-entity-badge" aria-live="polite">None</span>
+        </div>
+      </div>
+
+      <div class="mission-control-actions">
         <a href="dashboard.html" class="btn-fcis-ghost">
           <i class="bi bi-arrow-left" aria-hidden="true"></i> Dashboard
         </a>
       </div>
+    </header>
+
+    <!-- Mobile-only section switcher: replaces the overlay-drawer layout below 1100px -->
+    <div class="inv-mobile-tabs" role="tablist" aria-label="Investigation sections">
+      <button class="inv-tab inv-tab-active" data-tab="graph" role="tab" aria-selected="true">
+        <i class="bi bi-diagram-3" aria-hidden="true"></i> Graph
+      </button>
+      <button class="inv-tab" data-tab="details" role="tab" aria-selected="false">
+        <i class="bi bi-person-badge" aria-hidden="true"></i> Entity
+      </button>
+      <button class="inv-tab" data-tab="report" role="tab" aria-selected="false">
+        <i class="bi bi-robot" aria-hidden="true"></i> Report
+      </button>
+      <button class="inv-tab" data-tab="activity" role="tab" aria-selected="false">
+        <i class="bi bi-terminal" aria-hidden="true"></i> Activity
+      </button>
+      <button class="inv-tab" data-tab="history" role="tab" aria-selected="false">
+        <i class="bi bi-clock-history" aria-hidden="true"></i> History
+      </button>
     </div>
 
     <div class="inv-stage">
@@ -122,8 +199,8 @@
         </div>
       </section>
 
-
-      <!-- <aside class="account-panel inv-drawer" aria-label="Account details">
+      <!-- ===================== ENTITY DETAILS DRAWER ===================== -->
+      <aside class="account-panel inv-drawer" aria-label="Entity details">
 
         <div class="account-panel-header">
           <div class="account-panel-title">
@@ -134,21 +211,19 @@
         </div>
 
         <div class="account-panel-body" id="account-details-body">
-          
           <div id="no-selection-state" class="no-selection-state">
             <div class="no-selection-icon" aria-hidden="true">
-              
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/>
               </svg>
             </div>
             <p class="no-selection-text">
-              Select an entity in the network to view ownership details, transaction volume, and case metadata.
+              Select an entity in the network to view transaction volume, counterparties, and case metadata.
             </p>
           </div>
         </div>
 
-      </aside> -->
+      </aside>
 
       <!-- ===================== AI REPORT DRAWER ===================== -->
       <section class="report-panel inv-drawer" aria-label="AI investigation report">
@@ -162,15 +237,33 @@
         </div>
 
         <div class="report-panel-body">
-          <button
-  id="generate-report"
-  class="btn-fcis-primary"
-  style="margin-top:12px;"
->
-  Generate AI Report
-</button>
+          <button id="generate-report" class="btn-fcis-primary" style="margin-top:0;" disabled>
+            <i class="bi bi-stars" aria-hidden="true"></i>
+            Generate AI Report
+          </button>
+          <p id="report-placeholder" class="report-placeholder">
+            Select an entity, then generate its investigation report.
+          </p>
           <p id="ai-report-text" class="report-text" aria-live="polite" style="white-space:pre-line;"></p>
         </div>
+
+      </section>
+
+      <!-- ===================== ACTIVITY FEED DRAWER ===================== -->
+      <section class="activity-panel inv-drawer" aria-label="Live investigation activity feed">
+
+        <div class="activity-panel-header">
+          <div class="d-flex align-center gap-2">
+            <i class="bi bi-terminal" aria-hidden="true" style="color:var(--low);"></i>
+            <span class="report-panel-title">Activity Feed</span>
+          </div>
+          <span class="activity-live-badge" id="activity-live-badge">
+            <span class="activity-live-dot" aria-hidden="true"></span>
+            <span id="activity-live-text">LIVE</span>
+          </span>
+        </div>
+
+        <div class="activity-panel-body" id="activity-feed" aria-live="polite" aria-label="System activity log"></div>
 
       </section>
 
@@ -182,11 +275,24 @@
             <i class="bi bi-clock-history" aria-hidden="true" style="color:var(--high);"></i>
             <span class="section-title" style="font-size:12px;">Transaction History</span>
           </div>
-          <span class="fcis-badge badge-medium" id="tx-count-badge" aria-live="polite"></span>
+          <div class="d-flex align-center gap-2 flex-wrap">
+            <div class="tx-view-toggle" role="group" aria-label="View mode">
+              <button class="tx-view-btn tx-view-active" data-view="table">Table</button>
+              <button class="tx-view-btn" data-view="timeline">Timeline</button>
+            </div>
+            <span class="fcis-badge badge-medium" id="tx-count-badge" aria-live="polite"></span>
+          </div>
         </div>
 
-        <div class="fcis-table-wrapper">
-          <table class="fcis-table" role="table" aria-label="Transaction records">
+        <div class="tx-filter-chips" role="group" aria-label="Status filter">
+          <button class="filter-chip filter-chip-active" data-status="all">All</button>
+          <button class="filter-chip" data-status="Flagged">Flagged</button>
+          <button class="filter-chip" data-status="Suspicious">Suspicious</button>
+          <button class="filter-chip" data-status="Clear">Clear</button>
+        </div>
+
+        <div class="fcis-table-wrapper" id="tx-table-view">
+          <table class="fcis-table tx-table" role="table" aria-label="Transaction records">
             <thead>
               <tr>
                 <th scope="col">Tx ID</th>
@@ -201,10 +307,11 @@
           </table>
         </div>
 
+        <div id="tx-timeline-view" class="tx-timeline-view" style="display:none;"></div>
+
         <!-- Empty state -->
         <div id="tx-empty" class="empty-state" style="display:none;" aria-live="polite">
           <div class="empty-state-icon" aria-hidden="true">
-            <!-- Empty inbox / no mail icon -->
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
               <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
@@ -218,22 +325,67 @@
     </div><!-- / .inv-stage -->
   </div><!-- / .investigation-wrapper -->
 
+  <!-- ===================== SUSPICIOUS ACCOUNTS TABLE ===================== -->
+  <section class="suspicious-section" aria-label="Suspicious accounts">
+    <div class="suspicious-toolbar">
+      <div class="section-title">Suspicious Accounts</div>
+      <span id="suspicious-count-badge" class="fcis-badge badge-medium" aria-live="polite"></span>
+    </div>
+
+    <div class="fcis-card suspicious-card" style="padding:0; overflow:hidden;">
+      <div class="fcis-table-wrapper suspicious-table-wrapper">
+        <table class="fcis-table suspicious-table" role="table" aria-label="Suspicious accounts data table">
+          <thead>
+            <tr>
+              <th scope="col" class="sortable" data-sort-key="account">
+                Account <span class="sort-icon" aria-hidden="true">↕</span>
+              </th>
+              <th scope="col" class="sortable" data-sort-key="risk">
+                Risk <span class="sort-icon" aria-hidden="true">↕</span>
+              </th>
+              <th scope="col" class="sortable" data-sort-key="transfers">
+                Transfers <span class="sort-icon" aria-hidden="true">↕</span>
+              </th>
+              <th scope="col" class="sortable" data-sort-key="status">
+                Status <span class="sort-icon" aria-hidden="true">↕</span>
+              </th>
+              <th scope="col" class="sortable" data-sort-key="connections">
+                Connections <span class="sort-icon" aria-hidden="true">↕</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="suspicious-table-body"></tbody>
+        </table>
+      </div>
+
+      <div id="suspicious-empty" class="empty-state" style="display:none;" aria-live="polite">
+        <div class="empty-state-icon" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/>
+            <line x1="16.5" y1="16.5" x2="22" y2="22"/>
+          </svg>
+        </div>
+        <p class="empty-state-text">No suspicious accounts found in this ledger.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- Loading overlay -->
   <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-label="Loading investigation data">
     <div class="loading-card">
       <div class="loading-spinner-lg" aria-hidden="true"></div>
       <p class="loading-label">Building money trail graph…</p>
-      <p class="loading-sub">GET /api/graph → vis-network render</p>
+      <p class="loading-sub">Rendering vis-network</p>
     </div>
   </div>
 
   <footer class="fcis-footer">
-    <span class="fcis-footer-text">FCIS &copy; 2025 &mdash; FinLens</span>
-    <span class="fcis-footer-text">
-      <span class="fcis-footer-text">Team : Patiala Pegs</span>
-    </span>
+    <span class="fcis-footer-text">FCIS &copy; 2026 &mdash; FinLens</span>
+    <span class="fcis-footer-text">Team : Patiala Pegs</span>
   </footer>
 
   <script src="app.js"></script>
+  <script src="investigation.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>
