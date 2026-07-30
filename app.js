@@ -255,6 +255,174 @@ function initMobileNav() {
 /* ============================================================
    PAGE: UPLOAD (index.html)
    ============================================================ */
+/* ============================================================
+   PROCESSING MODAL CONTROLLER
+   8 named stages matching the spec exactly. Stage 0 ("Uploading
+   File") tracks REAL upload byte-progress via XHR — not simulated.
+   Stages 1-6 happen inside one opaque server round trip with no
+   granular signal available, so they advance on a steady,
+   deliberate timer as a clearly best-effort approximation, and
+   they never outrun reality: if the real response arrives first,
+   remaining stages fast-forward instantly instead of making the
+   user wait on fake delays. Stage 7 ("Analysis Complete") only
+   ever lights up on an actual successful response.
+   ============================================================ */
+const PROCESSING_STAGES = [
+  { label: 'Uploading File',                   status: 'Uploading file…' },
+  { label: 'Reading CSV',                      status: 'Reading transaction data…' },
+  { label: 'Parsing Transactions',             status: 'Parsing transaction records…' },
+  { label: 'Building Transaction Network',     status: 'Building financial network…' },
+  { label: 'Running Risk Analysis',            status: 'Running AI risk analysis…' },
+  { label: 'Detecting Suspicious Patterns',    status: 'Searching for suspicious transaction patterns…' },
+  { label: 'Generating Investigation Results', status: 'Preparing investigation workspace…' },
+  { label: 'Analysis Complete',                status: 'Analysis completed successfully.' },
+];
+
+function createProcessingController() {
+  const overlayEl = document.getElementById('processing-overlay');
+  const statusEl  = document.getElementById('processing-status-text');
+  const fillEl    = document.getElementById('processing-progress-fill');
+  const stageEls  = Array.from(document.querySelectorAll('.processing-stage'));
+
+  if (!overlayEl || !fillEl || stageEls.length === 0) return null; // markup not present on this page
+
+  const STAGE_COUNT = stageEls.length;
+  let currentIndex = -1;
+  let simTimer = null;
+  let statusTimer = null;
+
+  function show() {
+    overlayEl.classList.add('visible');
+    overlayEl.setAttribute('aria-hidden', 'false');
+  }
+
+  function hide() {
+    overlayEl.classList.remove('visible');
+    overlayEl.setAttribute('aria-hidden', 'true');
+  }
+
+  function reset() {
+    clearTimeout(simTimer);
+    clearTimeout(statusTimer);
+    currentIndex = -1;
+    fillEl.style.width = '0%';
+    stageEls.forEach(li => li.classList.remove('stage-visible', 'stage-active', 'stage-done', 'stage-error'));
+    if (statusEl) { statusEl.style.opacity = '1'; statusEl.textContent = 'Preparing upload…'; }
+  }
+
+  function setStatus(text) {
+    if (!statusEl || !text) return;
+    statusEl.style.opacity = '0';
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+      statusEl.textContent = text;
+      statusEl.style.opacity = '1';
+    }, 140);
+  }
+
+  function setPercent(pct) {
+    fillEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  }
+
+  // Reveals every stage up to `index` (in case several are being caught
+  // up at once), marks the target stage active or done, and updates the
+  // status line + progress bar to match. Never moves backwards.
+  function goToStage(index, { done = false, status } = {}) {
+    if (index < currentIndex) return;
+    currentIndex = index;
+
+    stageEls.forEach((li, i) => {
+      li.classList.remove('stage-error');
+      if (i <= index) li.classList.add('stage-visible');
+      if (i < index || (i === index && done)) {
+        li.classList.add('stage-done');
+        li.classList.remove('stage-active');
+      } else if (i === index) {
+        li.classList.add('stage-active');
+        li.classList.remove('stage-done');
+      } else {
+        li.classList.remove('stage-active', 'stage-done');
+      }
+    });
+
+    setStatus(status);
+    setPercent(((index + (done ? 1 : 0.5)) / STAGE_COUNT) * 100);
+  }
+
+  function setUploadProgress(fraction) {
+    // Real byte-level progress, scaled into stage 0's slice of the bar.
+    setPercent((Math.max(0, Math.min(1, fraction)) / STAGE_COUNT) * 100);
+  }
+
+  function startSimulatedProcessing() {
+    goToStage(0, { done: true, status: PROCESSING_STAGES[0].status });
+    let i = 1;
+
+    function next() {
+      if (i >= STAGE_COUNT - 1) return; // hold just before "Analysis Complete"
+      goToStage(i, { status: PROCESSING_STAGES[i].status });
+      i++;
+      if (i < STAGE_COUNT - 1) simTimer = setTimeout(next, 620);
+    }
+    simTimer = setTimeout(next, 350);
+  }
+
+  function complete() {
+    clearTimeout(simTimer);
+    goToStage(STAGE_COUNT - 1, { done: true, status: PROCESSING_STAGES[STAGE_COUNT - 1].status });
+  }
+
+  function fail() {
+    clearTimeout(simTimer);
+    const idx = Math.max(0, currentIndex);
+    stageEls[idx]?.classList.add('stage-error');
+    stageEls[idx]?.classList.remove('stage-active');
+  }
+
+  return { show, hide, reset, goToStage, setUploadProgress, startSimulatedProcessing, complete, fail };
+}
+
+/**
+ * Uploads a file with real byte-level progress via XHR (fetch has no
+ * upload-progress API). Resolves with the parsed JSON body for any
+ * response the server sends; rejects only on network failure, a
+ * timeout, or a non-JSON body.
+ */
+function uploadWithProgress(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    xhr.open('POST', url, true);
+    xhr.timeout = CONFIG.FETCH_TIMEOUT_MS * 6; // real analysis can take longer than a simple fetch
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && typeof onProgress === 'function') onProgress(e.loaded / e.total);
+    };
+    xhr.upload.onload = () => { if (typeof onProgress === 'function') onProgress(1); };
+
+    xhr.onload = () => {
+      let body = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new Error('Server returned an invalid response.'));
+        return;
+      }
+      resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, body });
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during upload.'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out. Please try again.'));
+
+    xhr.send(formData);
+  });
+}
+
+/* ============================================================
+   PAGE: UPLOAD (index.html)
+   ============================================================ */
 function initUploadPage() {
   const dropZone     = document.getElementById('drop-zone');
   const fileInput    = document.getElementById('csv-file-input');
@@ -266,10 +434,11 @@ function initUploadPage() {
   const fileInfoEl   = document.getElementById('file-selected-info');
   const fileNameEl   = document.getElementById('file-name');
   const fileSizeEl   = document.getElementById('file-size');
-  const spinnerEl    = document.getElementById('upload-spinner');
   const demoBtn      = document.getElementById('demo-data-btn');
 
   if (!dropZone || !fileInput || !uploadBtn) return;
+
+  const processing = createProcessingController();
 
   let selectedFile = null;
 
@@ -368,48 +537,46 @@ function initUploadPage() {
     }
 
     uploadBtn.disabled = true;
-    toggleVisible(spinnerEl, true, 'd-flex');
-    showStatus('loading', '', 'Parsing ledger and scoring risk — please wait.');
-    statusIcon.className = 'spinner';
-    statusIcon.textContent = '';
+    hideStatusEl();
+    processing?.reset();
+    processing?.show();
+    processing?.goToStage(0, { status: PROCESSING_STAGES[0].status });
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
+      const { ok, status, body } = await uploadWithProgress(
+        CONFIG.UPLOAD_ENDPOINT,
+        selectedFile,
+        fraction => {
+          processing?.setUploadProgress(fraction);
+          if (fraction >= 1) processing?.startSimulatedProcessing();
+        }
+      );
 
-      const response = await fetch(CONFIG.UPLOAD_ENDPOINT, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed (HTTP ${response.status}).`);
+      if (!ok) {
+        throw new Error(body?.error || `Upload failed (HTTP ${status}).`);
+      }
+      if (!body || body.success === false) {
+        throw new Error(body?.error || 'Upload failed.');
       }
 
-      const result = await response.json();
-
-      if (!result || result.success === false) {
-        throw new Error(result?.error || 'Upload failed.');
-      }
-
-      saveAnalysis(result, {
+      saveAnalysis(body, {
         filename: selectedFile.name,
         uploadedAt: new Date().toISOString(),
       });
 
-      statusIcon.className = '';
-      showStatus('success', '✓', 'Risk analysis complete — redirecting to dashboard.');
+      // Only now — on a real, successful response — does the final
+      // stage light up and the app move on to the dashboard.
+      processing?.complete();
 
       setTimeout(() => {
         window.location.href = 'dashboard.html';
-      }, 1200);
+      }, 900);
 
     } catch (err) {
-      statusIcon.className = '';
+      processing?.fail();
+      setTimeout(() => processing?.hide(), 1400);
       showStatus('error', '⚠', err.message || 'Upload failed. Please try again.');
       uploadBtn.disabled = false;
-    } finally {
-      spinnerEl.style.display = 'none';
     }
   });
 
@@ -427,6 +594,7 @@ function initUploadPage() {
 
   uploadBtn.disabled = true;
 }
+
 
 /* ============================================================
    PAGE: DASHBOARD (dashboard.html)

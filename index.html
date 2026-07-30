@@ -125,7 +125,6 @@
           disabled
           aria-label="Upload and analyse CSV file"
         >
-          <span id="upload-spinner" style="display:none" class="spinner" aria-hidden="true"></span>
           <span>Analyse Transactions</span>
         </button>
 
@@ -217,11 +216,66 @@
     </div>
   </main>
 
-  <!-- ===================== FOOTER ===================== -->
+  <!-- Footer -->
   <footer class="fcis-footer">
     <span class="fcis-footer-text">FCIS &copy; 2026 &mdash; FinLens</span>
     <span class="fcis-footer-text">Team : Patiala Pegs</span>
   </footer>
+
+  <!-- ===================== PROCESSING MODAL ===================== -->
+  <!-- Hidden until upload starts; app.js drives every stage/status/% below. -->
+  <div id="processing-overlay" class="processing-overlay" aria-hidden="true">
+    <div class="processing-modal" role="dialog" aria-modal="true" aria-label="Analysis in progress">
+
+      <div class="processing-modal-header">
+        <span class="processing-modal-eyebrow">
+          <i class="bi bi-cpu" aria-hidden="true"></i>
+          FinLens Engine
+        </span>
+        <h2 class="processing-modal-title">Analyzing Your Ledger</h2>
+        <p class="processing-modal-status" id="processing-status-text" aria-live="polite">Preparing upload…</p>
+      </div>
+
+      <ul class="processing-stage-list" id="processing-stage-list">
+        <li class="processing-stage" data-stage="0">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Uploading File</span>
+        </li>
+        <li class="processing-stage" data-stage="1">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Reading CSV</span>
+        </li>
+        <li class="processing-stage" data-stage="2">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Parsing Transactions</span>
+        </li>
+        <li class="processing-stage" data-stage="3">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Building Transaction Network</span>
+        </li>
+        <li class="processing-stage" data-stage="4">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Running Risk Analysis</span>
+        </li>
+        <li class="processing-stage" data-stage="5">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Detecting Suspicious Patterns</span>
+        </li>
+        <li class="processing-stage" data-stage="6">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Generating Investigation Results</span>
+        </li>
+        <li class="processing-stage" data-stage="7">
+          <span class="stage-indicator" aria-hidden="true"></span>
+          <span class="stage-text">Analysis Complete</span>
+        </li>
+      </ul>
+
+      <div class="processing-progress-track">
+        <div class="processing-progress-fill" id="processing-progress-fill"></div>
+      </div>
+    </div>
+  </div>
 
   <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
