@@ -96,7 +96,7 @@
         </span>
         <h1 class="mc-filename" id="mc-filename">—</h1>
         <p class="mc-subline">
-          Select an entity in the network to trace fund flow
+          Trace how funds moved through this network and see why specific accounts are flagged
           <span id="page-account-label" class="mc-selected-entity"></span>
         </p>
       </div>
@@ -146,11 +146,11 @@
       <button class="inv-tab" data-tab="report" role="tab" aria-selected="false">
         <i class="bi bi-robot" aria-hidden="true"></i> Report
       </button>
-      <button class="inv-tab" data-tab="activity" role="tab" aria-selected="false">
-        <i class="bi bi-terminal" aria-hidden="true"></i> Activity
-      </button>
       <button class="inv-tab" data-tab="history" role="tab" aria-selected="false">
-        <i class="bi bi-clock-history" aria-hidden="true"></i> History
+        <i class="bi bi-clock-history" aria-hidden="true"></i> Evidence
+      </button>
+      <button class="inv-tab" data-tab="activity" role="tab" aria-selected="false">
+        <i class="bi bi-terminal" aria-hidden="true"></i> Log
       </button>
     </div>
 
@@ -162,7 +162,7 @@
         <div class="graph-header">
           <div class="graph-title">
             <i class="bi bi-diagram-3-fill" aria-hidden="true" style="color:var(--accent)"></i>
-            Transaction Network
+            How the Money Moved
           </div>
           <div class="graph-controls" role="group" aria-label="Graph controls">
             <button class="graph-btn" id="graph-zoom-in"  title="Zoom in"     aria-label="Zoom in">+</button>
@@ -172,6 +172,8 @@
             </button>
           </div>
         </div>
+
+        <p class="graph-subtitle">Every node is an <strong>account</strong>, every line a <strong>transfer</strong> — thicker lines carry larger amounts. Click a node to open its case file.</p>
 
         <div id="network-graph" role="img" aria-label="Interactive money trail network graph"></div>
 
@@ -200,12 +202,12 @@
       </section>
 
       <!-- ===================== ENTITY DETAILS DRAWER ===================== -->
-      <aside class="account-panel inv-drawer" aria-label="Entity details">
+      <aside class="account-panel inv-drawer" aria-label="Why this entity is suspicious">
 
         <div class="account-panel-header">
           <div class="account-panel-title">
             <i class="bi bi-person-badge-fill" aria-hidden="true" style="color:var(--accent);margin-right:6px;"></i>
-            Entity Details
+            Why This Entity Is Suspicious
           </div>
           <span id="selected-account-id" class="fcis-badge badge-medium" aria-live="polite">—</span>
         </div>
@@ -218,7 +220,7 @@
               </svg>
             </div>
             <p class="no-selection-text">
-              Select an entity in the network to view transaction volume, counterparties, and case metadata.
+              Select any account in the network to see its risk score, transaction volume, counterparties, and what triggered the flag.
             </p>
           </div>
         </div>
@@ -249,31 +251,13 @@
 
       </section>
 
-      <!-- ===================== ACTIVITY FEED DRAWER ===================== -->
-      <section class="activity-panel inv-drawer" aria-label="Live investigation activity feed">
-
-        <div class="activity-panel-header">
-          <div class="d-flex align-center gap-2">
-            <i class="bi bi-terminal" aria-hidden="true" style="color:var(--low);"></i>
-            <span class="report-panel-title">Activity Feed</span>
-          </div>
-          <span class="activity-live-badge" id="activity-live-badge">
-            <span class="activity-live-dot" aria-hidden="true"></span>
-            <span id="activity-live-text">LIVE</span>
-          </span>
-        </div>
-
-        <div class="activity-panel-body" id="activity-feed" aria-live="polite" aria-label="System activity log"></div>
-
-      </section>
-
       <!-- ===================== TRANSACTION HISTORY DRAWER ===================== -->
-      <section class="tx-panel inv-drawer" aria-label="Transaction history table">
+      <section class="tx-panel inv-drawer" aria-label="Supporting evidence: transaction history">
 
         <div class="tx-header">
           <div class="d-flex align-center gap-2">
             <i class="bi bi-clock-history" aria-hidden="true" style="color:var(--high);"></i>
-            <span class="section-title" style="font-size:12px;">Transaction History</span>
+            <span class="section-title" style="font-size:12px;">Supporting Evidence</span>
           </div>
           <div class="d-flex align-center gap-2 flex-wrap">
             <div class="tx-view-toggle" role="group" aria-label="View mode">
@@ -322,13 +306,34 @@
 
       </section>
 
+      <!-- ===================== ACTIVITY / INVESTIGATION LOG DRAWER ===================== -->
+      <section class="activity-panel inv-drawer" aria-label="Investigation log">
+
+        <div class="activity-panel-header">
+          <div class="d-flex align-center gap-2">
+            <i class="bi bi-terminal" aria-hidden="true" style="color:var(--low);"></i>
+            <span class="report-panel-title">Investigation Log</span>
+          </div>
+          <span class="activity-live-badge" id="activity-live-badge">
+            <span class="activity-live-dot" aria-hidden="true"></span>
+            <span id="activity-live-text">LIVE</span>
+          </span>
+        </div>
+
+        <div class="activity-panel-body" id="activity-feed" aria-live="polite" aria-label="System activity log"></div>
+
+      </section>
+
     </div><!-- / .inv-stage -->
   </div><!-- / .investigation-wrapper -->
 
-  <!-- ===================== SUSPICIOUS ACCOUNTS TABLE ===================== -->
-  <section class="suspicious-section" aria-label="Suspicious accounts">
+  <!-- ===================== WHAT TO INVESTIGATE NEXT ===================== -->
+  <section class="suspicious-section" aria-label="What to investigate next">
     <div class="suspicious-toolbar">
-      <div class="section-title">Suspicious Accounts</div>
+      <div class="section-header-group" style="margin-bottom:0;">
+        <div class="section-title">What to Investigate Next</div>
+        <p class="section-desc">Ranked by risk — start at the top. Click any row to open that account straight into the graph above.</p>
+      </div>
       <span id="suspicious-count-badge" class="fcis-badge badge-medium" aria-live="polite"></span>
     </div>
 

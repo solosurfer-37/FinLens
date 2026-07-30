@@ -90,8 +90,8 @@
 
     <div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-3">
       <div>
-        <h1 class="page-title">Risk Dashboard</h1>
-        <p class="page-subtitle">Case overview, ranked by threat severity across the active ledger</p>
+        <h1 class="page-title">Investigation Overview</h1>
+        <p class="page-subtitle">Here's what FinLens found — how money moved through this ledger, and which accounts need a closer look.</p>
       </div>
       <div class="d-flex gap-2">
         <a href="index.html" class="btn-fcis-ghost">
@@ -125,6 +125,10 @@
 
     <!-- ===================== STATS GRID ===================== -->
     <section aria-label="Summary statistics">
+      <div class="section-header-group">
+        <div class="section-title">What Happened</div>
+        <p class="section-desc">A snapshot of the uploaded ledger — transaction volume, unique accounts, and how much risk is concentrated in this data.</p>
+      </div>
       <div class="stats-grid">
 
         <article class="stat-card stat-info" aria-label="Total Transactions">
@@ -194,7 +198,10 @@
     <section aria-label="Risk score table">
 
       <div class="table-toolbar">
-        <div class="section-title">Account Risk Scores</div>
+        <div class="section-header-group" style="margin-bottom:0;">
+          <div class="section-title">Why These Accounts Are Suspicious</div>
+          <p class="section-desc">Every account is scored 0–100 from transaction patterns, velocity, and network position. Sort or search to see where the risk is concentrated.</p>
+        </div>
 
         <div class="d-flex gap-3 align-items-center flex-wrap">
           <div class="fcis-search" role="search">
@@ -248,6 +255,24 @@
       </div>
 
     </section>
+
+    <!-- ===================== WHAT'S NEXT ===================== -->
+    <div class="next-steps">
+      <div class="next-steps-copy">
+        <div class="next-steps-eyebrow">
+          <i class="bi bi-arrow-right-circle" aria-hidden="true"></i>
+          What to investigate next
+        </div>
+        <div class="next-steps-title">Trace how the money actually moved</div>
+        <p class="next-steps-text">Start with the highest-risk accounts above, then open the money-trail graph to see the connections between them, generate an AI case report, and review every flagged transaction.</p>
+      </div>
+      <div class="next-steps-actions">
+        <a href="investigation.html" class="btn-fcis-primary">
+          <i class="bi bi-diagram-3" aria-hidden="true"></i>
+          Open the Investigation Graph
+        </a>
+      </div>
+    </div>
 
   </main>
 
